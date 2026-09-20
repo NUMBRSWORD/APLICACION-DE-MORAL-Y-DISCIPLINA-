@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- El escudo ocupa el 76% del alto de su imagen. Se encoge 10dp por lado dentro del
+     lienzo de 108dp para que quepa entero en el recorte circular del lanzador, y el
+     empalme con el fondo queda fuera de la zona visible. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/logo_escudo"
+    android:inset="10dp" />

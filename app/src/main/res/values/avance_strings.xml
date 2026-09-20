@@ -1,0 +1,20 @@
+<resources>
+    <string name="avance_titulo">Avance del expediente</string>
+    <string name="avance_resumen">%1$d de %2$d pasos completados</string>
+    <string name="avance_hecho">Completado</string>
+    <string name="avance_siguiente">Siguiente paso</string>
+    <string name="avance_pendiente">Pendiente</string>
+    <string name="avance_sin_registro">Sin descargo registrado</string>
+    <string name="avance_por_revisar">Revisar estado en el expediente</string>
+    <string name="avance_fecha">Completado · %1$s</string>
+    <string name="avance_lectura">%1$d. %2$s. %3$s</string>
+    <string name="paso_falta">Falta registrada</string>
+    <string name="paso_clasificar">Clasificación de la falta</string>
+    <string name="paso_reincorporacion">Reincorporación</string>
+    <string name="paso_imputacion">Imputación</string>
+    <string name="paso_descargo">Descargo</string>
+    <string name="paso_orden">Orden de sanción</string>
+    <string name="paso_notificacion">Subir expediente</string>
+    <string name="paso_informe">Informe administrativo</string>
+    <string name="paso_archivo">Archivado sin sanción</string>
+</resources>

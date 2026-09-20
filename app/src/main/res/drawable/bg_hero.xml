@@ -1,0 +1,7 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="rectangle">
+        <gradient android:angle="135" android:startColor="#03271F" android:centerColor="#084936" android:endColor="#0B674C"/>
+        <corners android:bottomLeftRadius="30dp" android:bottomRightRadius="30dp"/>
+    </shape></item>
+    <item android:drawable="@drawable/hero_lines"/>
+</layer-list>

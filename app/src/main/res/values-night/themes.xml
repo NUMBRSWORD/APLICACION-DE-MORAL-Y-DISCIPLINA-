@@ -1,0 +1,33 @@
+<resources>
+    <style name="Base.Theme.MESADEPARTES" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/verde_pnp</item>
+        <item name="colorOnPrimary">@color/verde_profundo</item>
+        <item name="colorPrimaryContainer">@color/verde_suave</item>
+        <item name="colorOnPrimaryContainer">@color/verde_pnp_claro</item>
+        <item name="colorSecondary">@color/dorado</item>
+        <item name="colorOnSecondary">@color/verde_profundo</item>
+        <item name="colorSecondaryContainer">@color/dorado_suave</item>
+        <item name="colorOnSecondaryContainer">@color/dorado</item>
+        <item name="colorSurface">@color/fondo_app</item>
+        <item name="colorOnSurface">@color/texto_principal</item>
+        <item name="colorSurfaceVariant">@color/superficie_elevada</item>
+        <item name="colorOnSurfaceVariant">@color/texto_secundario</item>
+        <item name="colorOutline">@color/borde_suave</item>
+        <item name="android:windowBackground">@color/fondo_app</item>
+        <item name="android:navigationBarColor">@color/fondo_app</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="materialButtonStyle">@style/Widget.MESADEPARTES.Button</item>
+        <item name="textInputStyle">@style/Widget.MESADEPARTES.TextInput</item>
+        <item name="materialCardViewStyle">@style/Widget.MESADEPARTES.Card</item>
+    </style>
+
+    <style name="Theme.MESADEPARTES" parent="Base.Theme.MESADEPARTES" />
+
+    <style name="Theme.MESADEPARTES.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/verde_profundo</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/logo_mascota</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/superficie_tarjeta</item>
+        <item name="postSplashScreenTheme">@style/Theme.MESADEPARTES</item>
+    </style>
+</resources>

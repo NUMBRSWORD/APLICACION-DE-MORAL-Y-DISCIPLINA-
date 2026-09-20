@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* Mismos tokens y componentes que la hoja pública, para detectar mezclas de temas. */
+:root{--bg:#0f1720;--bg-elev:#16212c;--bg-card:#1b2836;--text:#e7edf3;--text-muted:#93a3b3;--accent:#1f9d55;--border:#2a3947}
+:root[data-theme=light]{--bg:#eef1f4;--bg-elev:#fff;--bg-card:#fff;--text:#16222c;--text-muted:#5c6b78;--accent:#1a8a4a;--border:#d8dee4}
+.hidden{display:none}body{font-family:sans-serif;background:var(--bg);color:var(--text)}
+.card,.modal{padding:20px;margin:12px;background:var(--bg-card);color:var(--text)}
+input,select,textarea{background:var(--bg-elev);color:var(--text);border:1px solid var(--border);width:100%;box-sizing:border-box;margin:6px 0;padding:10px}
+.muted{color:var(--text-muted)}.btn-primary{background:var(--accent);color:white;padding:12px;border:0;border-radius:10px}
+.pill-warning{color:#e5ad53;background:rgba(217,154,43,.16);padding:8px;display:inline-block}
+</style></head><body>
+<header id="topbar"><nav>
+<button class="tab-btn" data-view="cumplimiento">Cumplimiento</button>
+<button class="tab-btn" data-view="seguimiento">Archivo</button>
+<button class="tab-btn" data-view="efectivos">Personal</button>
+<button class="tab-btn" data-view="recepcion">Recepción</button>
+</nav></header><main>
+<section id="view-login" class="view">Ingreso</section>
+<section id="view-dashboard" class="view hidden">Inicio genérico<button id="btnFaltasLote">Registro</button></section>
+<section id="view-cumplimiento" class="view hidden card"><h2>Cumplimiento</h2>
+<p class="muted">Documento de demostración · pendiente de revisión</p>
+<label>Observaciones<input id="textoConservar" value="Borrador sin enviar"></label>
+<select><option>Documento de prueba</option></select><textarea>Texto de prueba legible</textarea>
+<p><span class="pill-warning">Pendiente</span></p><button class="btn-primary">Revisar documento</button>
+<div class="modal"><h3>Detalle</h3><p class="muted">Contenido de prueba</p></div>
+</section>
+<section id="view-seguimiento" class="view hidden card"><h2>Archivo</h2></section>
+<section id="view-efectivos" class="view hidden card"><h2>Personal</h2></section>
+<section id="view-recepcion" class="view hidden card"><h2>Recepción</h2></section>
+<section id="view-nota-detail" class="view hidden card"><h2>Completar expediente de prueba</h2></section>
+<div id="modalFaltasLote" class="hidden card"><h2>Revisar PDF</h2><input id="flArchivo" type="file" accept="application/pdf">
+<button id="guardar">Registrar (prueba)</button><button id="cerrar">Cancelar</button></div>
+</main><script type="module" src="app.js"></script></body></html>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context=".WebActivity">
+    <include layout="@layout/view_barra_modulo"/>
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout android:id="@+id/cargaModulo" android:layout_width="match_parent"
+        android:layout_height="match_parent" android:background="@color/fondo_app"
+        android:orientation="vertical" android:gravity="center" android:padding="24dp">
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/progreso"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:indeterminate="true" />
+
+        <TextView android:id="@+id/tvCargaModulo" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center"
+            android:textColor="@color/texto_principal" android:textSize="18sp"/>
+        <include layout="@layout/view_estado"/>
+    </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

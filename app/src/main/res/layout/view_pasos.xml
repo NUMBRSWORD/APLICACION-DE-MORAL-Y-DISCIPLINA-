@@ -1,0 +1,14 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="horizontal" android:baselineAligned="false"
+    android:layout_marginTop="24dp">
+    <TextView android:id="@+id/pasoAcceso" style="@style/Text.Paso"
+        android:layout_width="0dp" android:layout_height="wrap_content"
+        android:layout_weight="1" android:text="@string/paso_acceso" />
+    <TextView android:id="@+id/pasoPoliticas" style="@style/Text.Paso"
+        android:layout_width="0dp" android:layout_height="wrap_content"
+        android:layout_weight="1" android:layout_marginStart="8dp" android:text="@string/paso_politicas" />
+    <TextView android:id="@+id/pasoToken" style="@style/Text.Paso"
+        android:layout_width="0dp" android:layout_height="wrap_content"
+        android:layout_weight="1" android:layout_marginStart="8dp" android:text="@string/paso_token" />
+</LinearLayout>

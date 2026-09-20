@@ -1,0 +1,21 @@
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/estadoPanel" android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:layout_marginTop="16dp" android:visibility="gone"
+    android:accessibilityLiveRegion="polite"
+    app:cardBackgroundColor="@color/estado_alerta" app:strokeColor="@color/borde_alerta"
+    app:cardCornerRadius="20dp" app:cardElevation="0dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="18dp">
+        <TextView android:id="@+id/estadoTitulo" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="16sp" android:textStyle="bold"
+            android:textColor="@color/texto_alerta" />
+        <TextView android:id="@+id/estadoMensaje" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="8dp"
+            android:lineSpacingExtra="3dp" android:textSize="14sp" android:textColor="@color/texto_alerta" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btnReintentar"
+            style="@style/Widget.MESADEPARTES.Button.Outlined"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" android:text="@string/reintentar" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

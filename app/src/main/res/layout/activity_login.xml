@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/main" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fillViewport="true" android:clipToPadding="false">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:background="@drawable/bg_hero" android:orientation="vertical" android:padding="24dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <com.google.android.material.card.MaterialCardView android:layout_width="64dp"
+                    android:layout_height="64dp" app:cardCornerRadius="20dp"
+                    app:cardBackgroundColor="@color/white" app:strokeWidth="0dp" app:cardElevation="0dp">
+                    <ImageView android:layout_width="match_parent" android:layout_height="match_parent"
+                        android:src="@drawable/logo_mascota" android:padding="8dp"
+                        android:contentDescription="@null" android:scaleType="centerInside"/>
+                </com.google.android.material.card.MaterialCardView>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_marginStart="16dp" android:orientation="vertical">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/app_name" android:textSize="24sp" android:textStyle="bold"
+                        android:textColor="@color/white"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp" android:text="@string/login_eyebrow"
+                        android:textSize="11sp" android:letterSpacing="0.06" android:textColor="@color/oro_sobre_verde"/>
+                </LinearLayout>
+            </LinearLayout>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="28dp" android:text="@string/login_bienvenida"
+                android:textSize="32sp" android:fontFamily="sans-serif-medium" android:textColor="@color/white"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:text="@string/login_lectura_libre"
+                android:textSize="15sp" android:lineSpacingExtra="3dp" android:textColor="#D6E9E0"/>
+            <include layout="@layout/view_pasos"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="20dp">
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content" app:cardCornerRadius="28dp" app:cardElevation="3dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="22dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/login_documentos" android:textSize="22sp"
+                        android:textStyle="bold" android:textColor="@color/texto_principal"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp" android:text="@string/login_documentos_texto"
+                        android:textSize="14sp" android:lineSpacingExtra="3dp" android:textColor="@color/texto_secundario"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnVerTerminos"
+                        style="@style/Widget.MESADEPARTES.Button.Outlined"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="20dp" android:gravity="start|center_vertical"
+                        android:paddingTop="12dp" android:paddingBottom="12dp"
+                        android:text="@string/login_ver_terminos" app:icon="@drawable/ic_documento"
+                        app:iconTint="@color/verde_pnp" app:iconPadding="12dp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnVerDatos"
+                        style="@style/Widget.MESADEPARTES.Button.Outlined"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp" android:gravity="start|center_vertical"
+                        android:paddingTop="12dp" android:paddingBottom="12dp"
+                        android:text="@string/login_ver_datos" app:icon="@drawable/ic_lock"
+                        app:iconTint="@color/verde_pnp" app:iconPadding="12dp"/>
+                    <com.google.android.material.checkbox.MaterialCheckBox android:id="@+id/cbAcepto"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp" android:minHeight="64dp"
+                        android:text="@string/login_acepto" android:textSize="14sp"
+                        android:lineSpacingExtra="2dp" android:textColor="@color/texto_secundario"/>
+                    <include layout="@layout/view_estado"/>
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/progreso" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:layout_marginTop="12dp"
+                        android:indeterminate="true" android:visibility="gone"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnGoogle"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="60dp" android:layout_marginTop="16dp" android:enabled="false"
+                        android:text="@string/login_google" app:icon="@drawable/ic_arrow_forward"
+                        app:iconGravity="textEnd" app:iconTint="@color/sobre_primario"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnOtraCuenta"
+                        style="@style/Widget.MESADEPARTES.Button.Text"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/login_otra_cuenta" android:visibility="gone"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnInstitucional"
+                style="@style/Widget.MESADEPARTES.Button.Text"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="12dp" android:text="@string/login_institucional"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" android:gravity="center" android:lineSpacingExtra="3dp"
+                android:text="@string/login_aviso_aprobacion" android:textSize="12sp"
+                android:textColor="@color/texto_secundario"/>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

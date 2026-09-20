@@ -1,0 +1,32 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/main" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+    <include layout="@layout/view_barra_modulo"/>
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/subir_descripcion"
+                android:textSize="16sp" android:textColor="@color/texto_secundario" android:lineSpacingExtra="4dp"/>
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnEscanear" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/escanear_documento" app:icon="@drawable/ic_documento"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/escanear_descripcion" android:textColor="@color/texto_secundario"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnSeleccionarPdf" style="@style/Widget.MESADEPARTES.Button.Outlined" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/elegir_pdf" app:icon="@drawable/ic_expediente"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/elegir_pdf_descripcion" android:textColor="@color/texto_secundario"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <TextView android:id="@+id/tvScannerEstado" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:visibility="gone" android:text="@string/scanner_cargando" android:textColor="@color/texto_secundario"/>
+            <include layout="@layout/view_estado"/>
+            <com.google.android.material.card.MaterialCardView android:id="@+id/tarjetaPdf" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:visibility="gone" app:cardBackgroundColor="@color/verde_suave">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/pdf_seleccionado" android:textStyle="bold" android:textSize="18sp" android:textColor="@color/texto_principal"/>
+                    <TextView android:id="@+id/tvPdfNombre" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:textColor="@color/texto_secundario"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnVerPdf" style="@style/Widget.MESADEPARTES.Button.Text" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/pdf_vista_previa"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnContinuarPdf" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/pdf_continuar"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

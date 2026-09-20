@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToPadding="false"
+    android:fillViewport="true"
+    tools:context=".SolicitudActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_hero"
+            android:orientation="vertical"
+            android:paddingStart="24dp"
+            android:paddingTop="40dp"
+            android:paddingEnd="24dp"
+            android:paddingBottom="36dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_gold_pill"
+                android:paddingStart="12dp"
+                android:paddingTop="5dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="5dp"
+                android:text="@string/solicitud_paso"
+                android:textColor="@color/verde_profundo"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/solicitud_titulo"
+                android:textColor="@color/texto_sobre_verde"
+                android:textSize="30sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/solicitud_subtitulo"
+                android:textColor="#DDEFE8"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="18dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="22dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/solicitud_datos_titulo"
+                    android:textAppearance="?attr/textAppearanceTitleLarge"
+                    android:textColor="@color/texto_principal"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvCuenta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_status_info"
+                    android:padding="14dp"
+                    android:textColor="@color/estado_info_texto"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutGrado"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:hint="@string/solicitud_grado">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etGrado" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:inputType="textCapCharacters"
+                        android:maxLength="30" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutApellidos" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                    android:hint="@string/solicitud_apellidos">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etApellidos" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:inputType="textPersonName|textCapWords"
+                        android:maxLength="60" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutNombres" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                    android:hint="@string/solicitud_nombres">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etNombres" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:inputType="textPersonName|textCapWords"
+                        android:maxLength="60" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutCip" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                    android:hint="@string/solicitud_cip">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etCip" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:inputType="number"
+                        android:maxLength="12" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutDni" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                    android:hint="@string/solicitud_dni">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etDni" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:inputType="number"
+                        android:maxLength="8" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutTelefono" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                    android:hint="@string/solicitud_telefono">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etTelefono" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:imeOptions="actionDone"
+                        android:inputType="phone" android:maxLength="9" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEnviar" android:layout_width="match_parent"
+                    android:layout_height="56dp" android:layout_marginTop="24dp"
+                    android:text="@string/solicitud_enviar" />
+
+                <com.google.android.material.progressindicator.LinearProgressIndicator
+                    android:id="@+id/progreso" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                    android:indeterminate="true" android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp" android:text="@string/solicitud_aviso"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="@color/texto_secundario" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+</ScrollView>
