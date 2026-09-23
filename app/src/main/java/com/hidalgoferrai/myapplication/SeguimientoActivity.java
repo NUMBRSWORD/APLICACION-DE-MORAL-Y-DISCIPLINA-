@@ -95,7 +95,7 @@ public class SeguimientoActivity extends AppCompatActivity {
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(14);tarjeta.setLayoutParams(lp);
             LinearLayout caja=new LinearLayout(this);caja.setOrientation(LinearLayout.VERTICAL);caja.setPadding(dp(18),dp(18),dp(18),dp(16));
             caja.addView(texto(nombre,18,true));
-            caja.addView(texto(getString(R.string.seguimiento_nota,n.optString("numero_nota_falta","—"),n.optString("fecha_falta","—")),13,false));
+            caja.addView(texto(getString(R.string.seguimiento_nota,n.optString("numero_nota_falta","—"),Fechas.lima(n.optString("fecha_falta","—"))),13,false));
             pintarPasos(caja, n);
             TextView estado=texto(getString(ExpedientePendiente.siguiente(n)),14,true);
             estado.setTextColor(getColor(R.color.verde_pnp));caja.addView(estado);
@@ -114,7 +114,8 @@ public class SeguimientoActivity extends AppCompatActivity {
         for (ExpedientePendiente.Paso paso : pasos)
             if (paso.estado == ExpedientePendiente.Estado.COMPLETADO) hechos++;
         caja.addView(texto(getString(R.string.avance_titulo),16,true));
-        caja.addView(texto(getString(R.string.avance_resumen,hechos,pasos.size()),13,false));
+        caja.addView(texto(getResources().getQuantityString(R.plurals.avance_resumen,
+                pasos.size(), hechos, pasos.size()),13,false));
         for (int i=0; i<pasos.size(); i++) {
             ExpedientePendiente.Paso paso = pasos.get(i);
             boolean hecho = paso.estado == ExpedientePendiente.Estado.COMPLETADO;
@@ -126,8 +127,7 @@ public class SeguimientoActivity extends AppCompatActivity {
             else if (paso.estado == ExpedientePendiente.Estado.POR_REVISAR) textoEstado = R.string.avance_por_revisar;
             String estado = getString(textoEstado);
             if (hecho && paso.fecha.matches("\\d{4}-\\d{2}-\\d{2}.*")) {
-                String f=paso.fecha.substring(0,10);
-                estado=getString(R.string.avance_fecha,f.substring(8)+"/"+f.substring(5,7)+"/"+f.substring(0,4));
+                estado=getString(R.string.avance_fecha,Fechas.lima(paso.fecha));
             }
             LinearLayout fila = new LinearLayout(this);
             fila.setOrientation(LinearLayout.HORIZONTAL);

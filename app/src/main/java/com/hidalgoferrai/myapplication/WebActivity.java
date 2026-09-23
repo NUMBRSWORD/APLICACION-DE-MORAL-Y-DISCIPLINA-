@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
@@ -151,7 +152,8 @@ public class WebActivity extends AppCompatActivity {
         sesionParaWeb = getIntent().getStringExtra(EXTRA_SESION);
         if (sesionParaWeb != null) SesionActual.recibir(this, sesionParaWeb);
         seccion = getIntent().getStringExtra(EXTRA_VISTA);
-        if (seccion != null && !seccion.matches("cumplimiento|seguimiento|efectivos|recepcion|detalle|registro|consulta|recepcion-fisica")) {
+        if ("seguridad".equals(seccion)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        if (seccion != null && !seccion.matches("cumplimiento|seguimiento|efectivos|recepcion|detalle|registro|consulta|recepcion-fisica|panel|herramientas|roles|directivas|agenda|documentos|historial|reincorporacion|continuan|seguridad")) {
             finish(); return;
         }
         String uriDocumento = getIntent().getStringExtra(EXTRA_DOCUMENTO);
@@ -179,14 +181,7 @@ public class WebActivity extends AppCompatActivity {
         aplicarTemaNativo();
 
         configurarPuenteSeguro();
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)) {
-            receptorSW = propietarioSW;
-            ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(new ServiceWorkerClientCompat() {
-                @Override public WebResourceResponse shouldInterceptRequest(WebResourceRequest solicitud) {
-                    return recurso(solicitud.getUrl());
-                }
-            });
-        }
+        configurarServiceWorker();
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView vista, WebResourceRequest solicitud) {
@@ -290,6 +285,23 @@ public class WebActivity extends AppCompatActivity {
         cargarModulo();
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        // Al volver de una herramienta hija se recupera el interceptor de esta pantalla.
+        if (webView != null) configurarServiceWorker();
+    }
+
+    private void configurarServiceWorker() {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)) {
+            receptorSW = propietarioSW;
+            ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(new ServiceWorkerClientCompat() {
+                @Override public WebResourceResponse shouldInterceptRequest(WebResourceRequest solicitud) {
+                    return recurso(solicitud.getUrl());
+                }
+            });
+        }
+    }
+
     @Override
     protected void onSaveInstanceState(Bundle salida) {
         super.onSaveInstanceState(salida);
@@ -345,8 +357,32 @@ public class WebActivity extends AppCompatActivity {
                         JSONObject datos = new JSONObject(mensaje.getData());
                         if (!nonce.equals(datos.optString("nonce"))) return;
                         switch (datos.optString("type")) {
-                            case "ready": if (seccion != null && seccion.equals(datos.optString("view"))) listo(); break;
-                            case "error": mostrarError(R.string.modulo_no_disponible); break;
+                            case "ready":
+                                if (seccion != null && seccion.equals(datos.optString("view"))) listo();
+                                break;
+                            case "auth-step":
+                                if (seccion != null) {
+                                    // No vence el tiempo mientras la persona escribe su clave/token.
+                                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                                    listo();
+                                }
+                                break;
+                            case "security-complete":
+                                if ("seguridad".equals(seccion)) {
+                                    String confirmada = datos.getJSONObject("session").toString();
+                                    sesionHilo.execute(() -> {
+                                        SesionActual.recibir(getApplicationContext(), confirmada);
+                                        runOnUiThread(() -> { setResult(RESULT_OK); finish(); });
+                                    });
+                                }
+                                break;
+                            case "open-module":
+                                String destino = datos.optString("view");
+                                if ("herramientas".equals(seccion) && destino.matches("roles|directivas|agenda|documentos|historial|reincorporacion|continuan"))
+                                    startActivity(new Intent(this, WebActivity.class).putExtra(EXTRA_VISTA, destino));
+                                break;
+                            case "error": mostrarError("seguridad".equals(seccion)
+                                    ? R.string.modulo_seguridad_error : R.string.modulo_no_disponible); break;
                             case "back": finish(); break;
                             case "session":
                                 String nueva = datos.getJSONObject("session").toString();
@@ -367,7 +403,17 @@ public class WebActivity extends AppCompatActivity {
         if (seccion == null) return R.string.app_name;
         switch (seccion) {
             case "cumplimiento": return R.string.acceso_cumplimiento;
-            case "seguimiento": return R.string.modulo_archivo;
+            case "seguimiento": return R.string.historial_efectivo;
+            case "panel": return R.string.panel_mensual;
+            case "herramientas": return R.string.herramientas_titulo;
+            case "reincorporacion": return R.string.modulo_reincorporacion;
+            case "continuan": return R.string.modulo_continuan;
+            case "roles": return R.string.modulo_roles;
+            case "directivas": return R.string.modulo_directivas;
+            case "agenda": return R.string.modulo_agenda;
+            case "documentos": return R.string.modulo_documentos;
+            case "historial": return R.string.modulo_historial;
+            case "seguridad": return R.string.modulo_seguridad;
             case "efectivos": return R.string.acceso_personal;
             case "recepcion": return R.string.acceso_recepcion;
             case "recepcion-fisica": return R.string.recepcion_fisica;
@@ -509,12 +555,14 @@ public class WebActivity extends AppCompatActivity {
             }
             if (getPackageName().endsWith(".qa") && htmlPrueba != null && URL_APP.equals(url))
                 return textoWeb("text/html",htmlPrueba);
-            if ((URL_APP + "app.js").equals(url)) {
+            if ((URL_APP + "app.js").equals(uri.buildUpon().clearQuery().fragment(null).build().toString())) {
                 String fuente;
                 if (getPackageName().endsWith(".qa") && moduloPrueba != null) fuente = moduloPrueba;
                 else {
                     HttpURLConnection conexion = (HttpURLConnection)new URL(url).openConnection();
                     conexion.setConnectTimeout(15000); conexion.setReadTimeout(20000);
+                    conexion.setUseCaches(false);
+                    conexion.setRequestProperty("Cache-Control", "no-cache");
                     conexion.setInstanceFollowRedirects(false);
                     try {
                         if (conexion.getResponseCode() != 200) throw new IOException("Módulo no disponible");

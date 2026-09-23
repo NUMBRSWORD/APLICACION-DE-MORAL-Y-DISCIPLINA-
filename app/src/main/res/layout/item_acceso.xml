@@ -8,8 +8,8 @@
     android:foreground="?attr/selectableItemBackground"
     android:minHeight="172dp"
     app:cardBackgroundColor="@color/superficie_tarjeta"
-    app:cardCornerRadius="20dp"
-    app:cardElevation="1dp"
+    app:cardCornerRadius="22dp"
+    app:cardElevation="2dp"
     app:strokeColor="@color/borde_suave"
     app:strokeWidth="1dp">
 
@@ -47,12 +47,19 @@
             android:layout_height="wrap_content" android:layout_marginTop="5dp"
             android:textColor="@color/texto_secundario" android:textSize="12sp"/>
 
+        <!-- Empuja la flecha al borde inferior para que todas queden a la misma altura. -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:minHeight="12dp" />
+
         <ImageView
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:layout_gravity="end"
-            android:layout_marginTop="12dp"
             android:contentDescription="@null"
-            android:src="@drawable/ic_arrow_forward" />
+            android:src="@drawable/ic_arrow_forward"
+            app:tint="@color/dorado" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

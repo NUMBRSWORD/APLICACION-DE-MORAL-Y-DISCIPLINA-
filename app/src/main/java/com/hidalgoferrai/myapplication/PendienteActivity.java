@@ -6,24 +6,18 @@ import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 public class PendienteActivity extends AppCompatActivity {
 
     public static final String EXTRA_RECHAZADA = "rechazada";
+    public static final String EXTRA_TOKEN = "token";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_pendiente);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets barras = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(barras.left, barras.top, barras.right, barras.bottom);
-            return insets;
-        });
+        Diseno.bordes(this, false);
 
         boolean rechazada = getIntent().getBooleanExtra(EXTRA_RECHAZADA, false);
         ((TextView) findViewById(R.id.tvEstado)).setText(
@@ -32,6 +26,11 @@ public class PendienteActivity extends AppCompatActivity {
                 rechazada ? R.string.rechazada_titulo : R.string.pendiente_titulo);
         ((TextView) findViewById(R.id.tvMensaje)).setText(
                 rechazada ? R.string.rechazada_mensaje : R.string.pendiente_mensaje);
+        // Una cuenta que espera aprobación —o que fue rechazada— también puede pedir su baja.
+        findViewById(R.id.btnEliminarCuenta).setOnClickListener(v -> startActivity(
+                new Intent(this, EliminarCuentaActivity.class)
+                        .putExtra(EliminarCuentaActivity.EXTRA_TOKEN,
+                                getIntent().getStringExtra(EXTRA_TOKEN))));
         findViewById(R.id.btnVolver).setOnClickListener(v -> {
             AlmacenSeguro.borrarRefresco(this);
             Perfil.borrar(this);

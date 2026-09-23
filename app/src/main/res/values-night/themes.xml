@@ -26,8 +26,10 @@
 
     <style name="Theme.MESADEPARTES.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/verde_profundo</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/logo_mascota</item>
-        <item name="windowSplashScreenIconBackgroundColor">@color/superficie_tarjeta</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_mascota</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/mascota_fondo_verde</item>
         <item name="postSplashScreenTheme">@style/Theme.MESADEPARTES</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/verde_profundo</item>
     </style>
 </resources>

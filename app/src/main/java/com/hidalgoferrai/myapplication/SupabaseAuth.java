@@ -67,10 +67,10 @@ public final class SupabaseAuth {
         }
     }
 
-    public static Uri urlAccesoGoogle(String verificador) {
+    public static Uri urlAccesoGoogle(android.content.Context contexto, String verificador) {
         return Uri.parse(ConfigSupabase.URL + "/auth/v1/authorize").buildUpon()
                 .appendQueryParameter("provider", "google")
-                .appendQueryParameter("redirect_to", ConfigSupabase.REDIRECCION)
+                .appendQueryParameter("redirect_to", ConfigSupabase.redireccion(contexto))
                 .appendQueryParameter("code_challenge", desafio(verificador))
                 .appendQueryParameter("code_challenge_method", "s256")
                 .build();

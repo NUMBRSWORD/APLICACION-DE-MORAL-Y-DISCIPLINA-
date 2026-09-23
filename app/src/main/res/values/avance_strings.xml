@@ -1,6 +1,10 @@
 <resources>
     <string name="avance_titulo">Avance del expediente</string>
-    <string name="avance_resumen">%1$d de %2$d pasos completados</string>
+    <!-- Con un solo paso decía «0 de 1 pasos completados». -->
+    <plurals name="avance_resumen">
+        <item quantity="one">%1$d de %2$d paso completado</item>
+        <item quantity="other">%1$d de %2$d pasos completados</item>
+    </plurals>
     <string name="avance_hecho">Completado</string>
     <string name="avance_siguiente">Siguiente paso</string>
     <string name="avance_pendiente">Pendiente</string>

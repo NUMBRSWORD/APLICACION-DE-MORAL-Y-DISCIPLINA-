@@ -83,6 +83,15 @@
                     android:layout_height="56dp"
                     android:layout_marginTop="28dp"
                     android:text="@string/pendiente_volver" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEliminarCuenta"
+                    style="@style/Widget.MESADEPARTES.Button.Text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/inicio_eliminar_cuenta"
+                    android:textColor="@color/texto_secundario" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>

@@ -9,10 +9,9 @@ import android.view.View;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.checkbox.MaterialCheckBox;
@@ -38,6 +37,15 @@ public class LoginActivity extends AppCompatActivity {
     private LinearProgressIndicator progreso;
     private boolean tieneSesion;
     private boolean ocupado;
+    private final ActivityResultLauncher<Intent> seguridad = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), resultado -> {
+                if (resultado.getResultCode() != RESULT_OK) { cargando(false); return; }
+                cargando(true);
+                hilo.execute(() -> {
+                    try { verificarSesion(new JSONObject(SesionActual.obtener(this)), false); }
+                    catch (Exception e) { avisarError(e); }
+                });
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,11 +53,8 @@ public class LoginActivity extends AppCompatActivity {
         preferencias = getSharedPreferences(PREFERENCIAS, MODE_PRIVATE);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_login);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets barras = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(barras.left, barras.top, barras.right, barras.bottom);
-            return insets;
-        });
+        Tema.prepararBoton(this);
+        Diseno.bordes(this, false);
 
         cbAcepto = findViewById(R.id.cbAcepto);
         btnGoogle = findViewById(R.id.btnGoogle);
@@ -106,7 +111,7 @@ public class LoginActivity extends AppCompatActivity {
                 .putString(VERSION_ACEPTADA, ConfigSupabase.VERSION_TERMINOS)
                 .apply();
         try {
-            startActivity(new Intent(Intent.ACTION_VIEW, SupabaseAuth.urlAccesoGoogle(verificador)));
+            startActivity(new Intent(Intent.ACTION_VIEW, SupabaseAuth.urlAccesoGoogle(this, verificador)));
         } catch (ActivityNotFoundException e) {
             Toast.makeText(this, R.string.web_sin_aplicacion, Toast.LENGTH_SHORT).show();
         }
@@ -114,7 +119,7 @@ public class LoginActivity extends AppCompatActivity {
 
     private void procesarRetorno(Intent intent) {
         Uri datos = intent.getData();
-        if (datos == null || !"faltas".equals(datos.getScheme())
+        if (datos == null || !getString(R.string.oauth_esquema).equals(datos.getScheme())
                 || !"auth".equals(datos.getHost())) {
             return;
         }
@@ -176,6 +181,15 @@ public class LoginActivity extends AppCompatActivity {
             SupabaseAuth.registrarAceptacion(token, usuarioId);
         }
         String estado = SupabaseAuth.estadoDeCuenta(token, usuarioId);
+        if ("aprobado".equals(estado) && SupabaseApi.necesitaCambiarClave(token)) {
+            SesionActual.recibir(this, sesion.toString());
+            runOnUiThread(() -> {
+                cargando(false);
+                seguridad.launch(new Intent(this, WebActivity.class)
+                        .putExtra(WebActivity.EXTRA_VISTA, "seguridad"));
+            });
+            return;
+        }
         boolean faltaIdentificarse = "pendiente".equals(estado)
                 && !SupabaseAuth.tieneSolicitud(token, usuarioId);
         runOnUiThread(() -> continuarSegunEstado(
@@ -212,7 +226,8 @@ public class LoginActivity extends AppCompatActivity {
             finish();
         } else if ("pendiente".equals(estado) || "rechazado".equals(estado)) {
             startActivity(new Intent(this, PendienteActivity.class)
-                    .putExtra(PendienteActivity.EXTRA_RECHAZADA, "rechazado".equals(estado)));
+                    .putExtra(PendienteActivity.EXTRA_RECHAZADA, "rechazado".equals(estado))
+                    .putExtra(PendienteActivity.EXTRA_TOKEN, token));
             finish();
         } else {
             avisar(getString(R.string.login_error_cuenta));

@@ -1,60 +1,10 @@
 <resources>
     <string name="app_name">Faltos</string>
 
-    <string name="falta_titulo">Registrar falta</string>
-    <string name="falta_subtitulo">Registre primero la falta; la reincorporación y los documentos se controlan después desde el expediente.</string>
-    <string name="falta_seccion_efectivo">Identificación del efectivo</string>
-    <string name="falta_seccion_falta">Datos de la falta</string>
-
-    <string name="falta_grado">Grado</string>
-    <string name="falta_cip">CIP</string>
-    <string name="falta_dni">DNI (opcional)</string>
-    <string name="falta_apellidos">Apellidos</string>
-    <string name="falta_nombres">Nombres</string>
-    <string name="falta_codigo_infraccion">Código de infracción (opcional)</string>
-    <string name="falta_codigo_infraccion_ayuda">Se puede completar después</string>
-    <string name="falta_fecha">Fecha de falta</string>
-    <string name="falta_numero_nota">N.º de nota de falta</string>
-    <string name="falta_hora">Hora en que se constató la falta (opcional)</string>
-    <string name="falta_oficial">Oficial que constató (opcional)</string>
-    <string name="falta_puesto">Puesto / servicio según el rol (opcional)</string>
-    <string name="falta_elegir_fecha">Elegir fecha</string>
-    <string name="falta_elegir_hora">Elegir hora</string>
-    <string name="falta_boton_guardar">Guardar falta</string>
-    <string name="falta_guardada">Falta registrada para %1$s %2$s</string>
-
-    <string name="error_grado">Ingrese el grado</string>
-    <string name="error_cip">El CIP debe tener solo números (de 5 a 9 dígitos)</string>
-    <string name="error_dni">El DNI debe tener 8 dígitos</string>
-    <string name="error_apellidos">Ingrese los apellidos (solo letras)</string>
-    <string name="error_nombres">Ingrese los nombres (solo letras)</string>
-    <string name="error_codigo_infraccion">Código no válido. Ejemplo: L-21</string>
-    <string name="error_fecha">Elija la fecha de la falta</string>
-    <string name="error_numero_nota">Ingrese el número de la nota de falta</string>
-
-    <string name="acceso_subtitulo">Seleccione cómo va a ingresar</string>
-    <string name="acceso_usuario">Ingresar como usuario</string>
-    <string name="acceso_administrador">Ingresar como administrador</string>
-    <string name="acceso_aviso">Acceso de prueba: todavía sin contraseña ni conexión a la base de datos. El rol real vendrá de la cuenta, como en la aplicación web.</string>
-
     <string name="rol_administrador">Administrador</string>
     <string name="rol_usuario">Usuario</string>
-    <string name="rol_descripcion_administrador">Registra faltas, gestiona el personal y recibe expedientes.</string>
-    <string name="rol_descripcion_usuario">Consulta sus expedientes, su seguimiento y su cumplimiento.</string>
-    <string name="inicio_rol">Rol: %1$s</string>
 
-    <string name="menu_registrar_falta">Registrar falta</string>
-    <string name="menu_expedientes">Expedientes</string>
-    <string name="menu_seguimiento">Seguimiento</string>
-    <string name="menu_cumplimiento">Cumplimiento</string>
-    <string name="menu_efectivos">Efectivos (padrón de personal)</string>
-    <string name="menu_recepcion">Recepción (mesa de partes)</string>
-    <string name="menu_proximamente">Esta sección se activará al conectar la base de datos.</string>
-    <string name="menu_cambiar_rol">Cambiar de rol</string>
-
-    <string name="web_error_titulo">Sin conexión</string>
     <string name="web_error_mensaje">No se pudo cargar la aplicación. Revise su conexión a internet.</string>
-    <string name="web_error_reintentar">Reintentar</string>
     <string name="web_descarga_ok">Guardado: %1$s (%2$s)</string>
     <string name="web_descarga_error">No se pudo guardar el archivo</string>
     <string name="web_descarga_grande">El archivo supera el límite seguro de 20 MB</string>
@@ -62,14 +12,16 @@
     <string name="web_carpeta_descargas">carpeta Descargas</string>
     <string name="web_sin_aplicacion">No hay una aplicación para abrir este enlace</string>
 
-    <string name="login_eyebrow">ACCESO INSTITUCIONAL SEGURO</string>
+    <string name="login_eyebrow">HERRAMIENTA INDEPENDIENTE</string>
     <string name="login_bienvenida">Bienvenido a Faltos</string>
+    <string name="tema_activar_oscuro">Activar modo oscuro</string>
+    <string name="tema_activar_claro">Activar modo claro</string>
     <string name="login_acepto">He leído y acepto los términos y condiciones, y autorizo el tratamiento de mis datos personales.</string>
     <string name="login_ver_terminos">Leer los términos y condiciones</string>
     <string name="login_ver_datos">Leer la política de datos personales</string>
     <string name="login_google">Continuar con Google</string>
     <string name="login_aviso_aprobacion">Al crear su cuenta, un administrador debe aprobarla antes de que pueda ver información.</string>
-    <string name="login_institucional">Tengo cuenta institucional (CIP)</string>
+    <string name="login_institucional">Ingresar con correo o CIP</string>
     <string name="login_error_sin_aceptacion">Para continuar debe aceptar los términos y condiciones y el tratamiento de datos.</string>
     <string name="login_error_google">No se pudo completar el acceso con Google: %1$s</string>
     <string name="login_error_cuenta">No se pudo verificar su cuenta. Intente de nuevo o comuníquese con el administrador.</string>
@@ -77,13 +29,13 @@
     <string name="terminos_titulo">Términos y condiciones</string>
     <string name="datos_titulo">Política de datos personales</string>
     <string name="terminos_cerrar">Cerrar</string>
-    <string name="terminos_texto">BORRADOR: debe ser revisado por la unidad o su asesoría legal antes de usarse.\nVersión 1 · 19/09/2026\n\n1. Objeto. La aplicación Faltos da acceso al módulo Moral y Disciplina del CPNP Ventanilla, para la gestión del procedimiento disciplinario por infracciones leves (Ley N.° 30714 y su reglamento).\n\n2. Uso interno. Es un sistema de uso interno, solo para personal autorizado. Crear una cuenta no otorga acceso: un administrador debe aprobarla y asignarle su rol y su CIP.\n\n3. Sus obligaciones. Mantener la confidencialidad de su cuenta de Google y no compartir su acceso. Usar la información únicamente para funciones institucionales. No copiar, difundir ni sacar fuera del sistema los datos de expedientes o del personal. Comunicar de inmediato cualquier acceso indebido.\n\n4. Registro de actividad. Las acciones que realice en el sistema quedan registradas en un historial de auditoría.\n\n5. Suspensión. El administrador puede rechazar o suspender una cuenta cuando corresponda.\n\n6. Cambios. Si estos términos cambian, se le pedirá aceptar la nueva versión.\n\n7. Responsable. [completar: unidad o cargo responsable]</string>
-    <string name="datos_texto">BORRADOR: debe ser revisado por la unidad o su asesoría legal antes de usarse.\nVersión 1 · 19/09/2026\n\n1. Datos que se tratan. Al crear su cuenta con Google: su correo electrónico y el nombre de su cuenta de Google (nunca su contraseña de Google), y la fecha, hora y versión de esta aceptación. Además, el sistema trata los datos del procedimiento disciplinario del personal PNP de la comisaría: nombres, grado, CIP, DNI, unidad, notas informativas, descargos y órdenes de sanción.\n\n2. Finalidad. Identificarlo, evaluar su solicitud de acceso y gestionar el procedimiento disciplinario por infracciones leves conforme a la Ley N.° 30714 y su reglamento.\n\n3. Base legal. Su consentimiento, para los datos de su cuenta. El ejercicio de la función disciplinaria de la PNP, para los datos del procedimiento.\n\n4. Quién accede. El administrador tiene acceso total. El oficial instructor ve solo los expedientes donde figura como oficial que constató la falta y su propia ficha. El padrón completo del personal solo lo ve el administrador.\n\n5. Conservación. Los expedientes y archivos generados se conservan por 5 años desde el cierre del expediente; vencido el plazo se anonimizan o eliminan. Los datos de su cuenta se conservan mientras la cuenta esté activa. [confirmar]\n\n6. Respaldo. Base de datos y archivos en Supabase, con copia en Google Drive de la cuenta institucional.\n\n7. Sus derechos. Puede ejercer sus derechos de acceso, rectificación, cancelación y oposición (Ley N.° 29733) ante el responsable indicado abajo.\n\n8. Responsable del tratamiento. [completar: nombre, cargo y contacto]</string>
+    <string name="terminos_texto">BORRADOR PENDIENTE DE APROBACIÓN DEL RESPONSABLE. No publicar ni solicitar aceptación hasta completarlo.\nVersión de trabajo · 22/09/2026\n\n1. Objeto. Faltos es una herramienta independiente para organizar expedientes y documentos relacionados con procedimientos disciplinarios. No pertenece a la PNP ni a una entidad pública, y no sustituye ningún canal oficial, acto de notificación ni plazo legal.\n\n2. Acceso. El registro no concede acceso inmediato. Un administrador revisa cada solicitud y asigna permisos.\n\n3. Uso de documentos. Solo debe cargar datos y archivos cuando tenga autorización válida para tratarlos. Debe proteger su cuenta, no compartirla y comunicar los accesos indebidos.\n\n4. Actividad. Las operaciones pueden quedar registradas para seguridad y trazabilidad.\n\n5. Suspensión. El administrador puede rechazar o suspender una cuenta cuando corresponda.\n\n6. Cambios. Si cambian estos términos, se solicitará aceptar la nueva versión.\n\n7. Responsable del servicio y contacto: [completar antes de publicar].</string>
+    <string name="datos_texto">BORRADOR PENDIENTE DE APROBACIÓN DEL RESPONSABLE. No publicar ni solicitar aceptación hasta completarlo.\nVersión de trabajo · 22/09/2026\n\nFaltos es una herramienta independiente; no pertenece a la PNP ni a una entidad pública.\n\n1. Datos. La cuenta puede incluir nombre, correo, CIP y rol. Los expedientes pueden contener nombres, grado, DNI, notas, descargos, órdenes de sanción, apelaciones y documentos adjuntos. También se registran accesos y aceptación de políticas.\n\n2. Finalidad. Gestionar acceso y organizar expedientes para usuarios autorizados; la herramienta no realiza trámites oficiales ante una entidad pública.\n\n3. Servicios. El sistema usa Supabase para autenticación y almacenamiento y puede usar Google para el acceso y copias de respaldo, y Anthropic para funciones de asistencia. El responsable debe confirmar transferencias, regiones y destinatarios antes de publicar.\n\n4. Acceso y conservación. El acceso se limita por roles. El responsable debe confirmar los plazos reales de conservación y el proceso efectivo de eliminación de cuentas y datos antes de publicar.\n\n5. Derechos y solicitudes de eliminación. Debe indicarse un canal verificable para solicitar acceso, rectificación y eliminación, así como los datos que deban conservarse por obligación legal.\n\n6. Responsable del tratamiento y contacto: [completar antes de publicar].</string>
 
     <string name="pendiente_titulo">Cuenta pendiente de aprobación</string>
     <string name="pendiente_mensaje">Su cuenta fue creada y la aceptación de los términos quedó registrada. Un administrador debe aprobarla y asignarle su CIP y rol antes de que pueda ver información. Vuelva a ingresar cuando le confirmen la aprobación.</string>
     <string name="rechazada_titulo">Cuenta no aprobada</string>
-    <string name="rechazada_mensaje">Su solicitud de acceso no fue aprobada. Si cree que es un error, comuníquese con el administrador de la unidad.</string>
+    <string name="rechazada_mensaje">Su solicitud de acceso no fue aprobada. Si cree que es un error, comuníquese con el administrador de la aplicación.</string>
     <string name="pendiente_volver">Usar otra cuenta</string>
     <string name="pendiente_estado">SOLICITUD EN REVISIÓN</string>
     <string name="rechazada_estado">SOLICITUD OBSERVADA</string>
@@ -110,11 +62,11 @@
     <string name="error_solicitud_envio">No se pudo enviar la solicitud (%1$s)</string>
 
     <string name="firma_titulo">Firma de políticas</string>
-    <string name="firma_paso">CONFORMIDAD INSTITUCIONAL</string>
+    <string name="firma_paso">CONFIRMACIÓN DE LECTURA</string>
     <string name="firma_identidad_titulo">Datos de la firma</string>
     <string name="firma_identidad_texto">Estos datos quedarán vinculados a la versión exacta de cada política.</string>
-    <string name="firma_documentos_titulo">Documentos institucionales</string>
-    <string name="firma_subtitulo">Antes de usar el sistema debe leer y firmar las políticas institucionales. Su firma queda registrada con su nombre, cargo, fecha y la versión exacta del texto.</string>
+    <string name="firma_documentos_titulo">Documentos y políticas</string>
+    <string name="firma_subtitulo">Lea cada política antes de registrar su conformidad. Quedarán guardados su nombre, cargo, fecha y versión del texto. Es una constancia interna, no una firma digital certificada.</string>
     <string name="firma_grado">Grado</string>
     <string name="firma_nombre">Nombres y apellidos</string>
     <string name="firma_cargo">Cargo</string>
@@ -139,15 +91,12 @@
     <string name="inicio_saludo_noche">Buenas noches,</string>
     <string name="inicio_salir">Cerrar sesión</string>
     <string name="acceso_token">Token Digital</string>
-    <string name="acceso_expedientes">Expedientes</string>
     <string name="acceso_seguimiento">Seguimiento</string>
     <string name="acceso_cumplimiento">Cumplimiento</string>
     <string name="acceso_personal">Efectivos</string>
     <string name="acceso_recepcion">Recepción</string>
-    <string name="acceso_mas">Panel general</string>
 
     <string name="token_su_token">Su Token Digital es</string>
-
 
     <string name="token_continuar">Verificar e ingresar</string>
     <string name="token_activando_corto">••••••</string>
@@ -164,5 +113,24 @@
     <string name="inicio_panel_texto">Acceda rápidamente a las funciones habilitadas para su perfil.</string>
     <string name="inicio_seguridad_titulo">Sesión protegida con Token Digital</string>
     <string name="inicio_seguridad_texto">Nunca comparta su código de seis dígitos con otra persona.</string>
-    <string name="app_institucion">MORAL Y DISCIPLINA · CPNP VENTANILLA</string>
+    <string name="app_institucion">HERRAMIENTA INDEPENDIENTE · NO OFICIAL</string>
+
+    <string name="eliminar_titulo">Eliminar mi cuenta</string>
+    <string name="eliminar_paso">BAJA DEL SERVICIO</string>
+    <string name="eliminar_volver">Volver</string>
+    <string name="eliminar_que_pasa">Qué ocurre si pide la baja</string>
+    <string name="eliminar_se_borra">Se eliminan su cuenta de acceso, sus datos de identificación (grado, nombres, CIP, DNI y teléfono), su Token Digital y el registro de su cuenta de Google enlazada. Después de eso no podrá volver a entrar con esta cuenta.</string>
+    <string name="eliminar_se_conserva">Los expedientes y documentos que haya registrado no son datos personales suyos: pertenecen al acervo del servicio y pueden conservarse, igual que las constancias de aceptación de políticas mientras exista una obligación de conservarlas.</string>
+    <string name="eliminar_motivo">Motivo (opcional)</string>
+    <string name="eliminar_boton">Solicitar la eliminación</string>
+    <string name="eliminar_confirmar_titulo">¿Solicitar la eliminación?</string>
+    <string name="eliminar_confirmar_mensaje">Su pedido quedará registrado con la fecha y el administrador procederá a eliminar su cuenta. Esta acción no se puede deshacer desde la aplicación.</string>
+    <string name="eliminar_confirmar_si">Sí, solicitar</string>
+    <string name="eliminar_cancelar">Cancelar</string>
+    <string name="eliminar_registrada">Su pedido de eliminación quedó registrado</string>
+    <string name="eliminar_ya_pendiente">Ya tiene un pedido de eliminación en curso. El administrador lo resolverá y le responderá al correo de su cuenta.</string>
+    <string name="eliminar_sin_sesion">Para pedir la baja desde la aplicación debe haber iniciado sesión. También puede pedirla desde la página pública.</string>
+    <string name="eliminar_error">No se pudo registrar el pedido. Revise su conexión e inténtelo de nuevo.</string>
+    <string name="eliminar_web">También puede solicitarla sin instalar la aplicación en:\nnumbrsword.github.io/moral-y-disciplina/eliminar-cuenta.html</string>
+    <string name="inicio_eliminar_cuenta">Eliminar mi cuenta</string>
 </resources>

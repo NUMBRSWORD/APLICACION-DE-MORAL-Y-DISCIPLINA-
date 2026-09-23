@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 7 y 8 no admiten iconos adaptables: usan el escudo tal cual.
-     Desde Android 8.1 se prefiere la versión de mipmap-anydpi-v26. -->
-<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-    android:gravity="fill"
-    android:src="@drawable/logo_escudo" />
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/mascota_fondo_verde" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/logo_mascota_refinada"
+        android:left="8dp" android:top="8dp"
+        android:right="8dp" android:bottom="8dp" />
+</layer-list>

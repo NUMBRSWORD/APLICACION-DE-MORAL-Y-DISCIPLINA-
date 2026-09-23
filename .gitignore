@@ -10,3 +10,10 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Claves de firma y credenciales de publicación (también si se crean por error aquí).
+*.jks
+*.keystore
+*.p12
+*.pfx
+.private/

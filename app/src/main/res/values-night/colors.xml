@@ -6,20 +6,25 @@
     <color name="borde_alerta">#6B5532</color>
     <color name="texto_alerta">#F1D398</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="verde_pnp">#6ED6AD</color>
-    <color name="verde_pnp_claro">#87E2BE</color>
+    <color name="verde_pnp">#79DDB1</color>
+    <color name="verde_pnp_claro">#A0E9C8</color>
     <color name="verde_oscuro">#0C5B43</color>
     <color name="verde_profundo">#062E23</color>
     <color name="verde_suave">#153C30</color>
-    <color name="dorado">#E2B860</color>
-    <color name="dorado_suave">#493B1E</color>
-    <color name="fondo_app">#0D1511</color>
-    <color name="superficie_tarjeta">#15211B</color>
-    <color name="superficie_elevada">#1B2821</color>
-    <color name="borde_suave">#536B5E</color>
+    <color name="dorado">#F0C978</color>
+    <color name="dorado_suave">#3E341F</color>
+    <color name="fondo_app">#0C1510</color>
+    <color name="superficie_tarjeta">#17251D</color>
+    <color name="superficie_elevada">#1D3025</color>
+    <color name="borde_suave">#456452</color>
     <color name="texto_principal">#EEF7F1</color>
-    <color name="texto_secundario">#B7C7BE</color>
+    <color name="texto_secundario">#C1D0C5</color>
     <color name="texto_sobre_verde">#FFFFFFFF</color>
     <color name="estado_info">#17324A</color>
     <color name="estado_info_texto">#B7D7FF</color>
+
+    <!-- Variante oscura permitida por las normas de marca de Google. -->
+    <color name="google_fondo">#131314</color>
+    <color name="google_texto">#E3E3E3</color>
+    <color name="google_borde">#8E918F</color>
 </resources>

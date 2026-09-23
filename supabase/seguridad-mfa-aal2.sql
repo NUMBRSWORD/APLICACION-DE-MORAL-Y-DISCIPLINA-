@@ -5,6 +5,21 @@
 
 begin;
 
+-- Compatibilidad con la auditoría web del 21/09/2026: aplicar MFA no debe
+-- eliminar el bloqueo del servidor para una cuenta con clave pendiente.
+create or replace function public.clave_actualizada_para_operar()
+returns boolean language plpgsql stable security definer set search_path to 'public'
+as $$
+declare pendiente boolean;
+begin
+  if to_regprocedure('public.necesita_cambiar_clave()') is null then return true; end if;
+  execute 'select public.necesita_cambiar_clave()' into pendiente;
+  return pendiente is false;
+end;
+$$;
+revoke execute on function public.clave_actualizada_para_operar() from public, anon;
+grant execute on function public.clave_actualizada_para_operar() to authenticated;
+
 create or replace function public.tiene_mfa_verificada()
 returns boolean
 language sql
@@ -25,6 +40,7 @@ security definer
 set search_path to 'public'
 as $$
   select public.tiene_mfa_verificada()
+     and public.clave_actualizada_para_operar()
      and exists (
        select 1 from public.profiles
        where id = auth.uid() and estado = 'aprobado'
@@ -42,6 +58,7 @@ security definer
 set search_path to 'public'
 as $$
   select public.tiene_mfa_verificada()
+     and public.clave_actualizada_para_operar()
      and exists (
        select 1 from public.profiles
        where id = auth.uid() and role = 'admin' and estado = 'aprobado'
@@ -60,6 +77,7 @@ set search_path to 'public'
 as $$
   select case
     when not public.tiene_mfa_verificada() then null
+    when not public.clave_actualizada_para_operar() then null
     when p.estado <> 'aprobado' then null
     when p.cip is not null then p.cip
     when u.email_confirmed_at is not null

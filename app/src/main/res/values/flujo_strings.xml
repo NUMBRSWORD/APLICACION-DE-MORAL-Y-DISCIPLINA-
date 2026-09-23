@@ -16,7 +16,7 @@
     <string name="error_mfa_desactivado">El servicio de Token Digital no está habilitado. El administrador debe habilitar la autenticación TOTP en Supabase.</string>
     <string name="error_codigo">El código no es válido o venció. Espere el siguiente código y compruebe que la fecha y hora del teléfono sean automáticas.</string>
     <string name="error_factores">La cuenta alcanzó el límite de tokens o tiene una activación anterior pendiente. Solicite al administrador que revise los factores registrados.</string>
-    <string name="error_permisos">La cuenta no tiene permiso para completar este paso. Solicite al administrador que revise su aprobación y los permisos de las políticas institucionales.</string>
+    <string name="error_permisos">La cuenta no tiene permiso para completar este paso. Solicite al administrador que revise su aprobación y los permisos de acceso.</string>
     <string name="error_servidor">El servicio no está disponible temporalmente. Intente nuevamente en unos minutos.</string>
     <string name="error_generico">No se pudo completar la operación. Puede reintentar o volver al paso anterior.</string>
     <string name="reintentar">Volver a intentar</string>
@@ -52,10 +52,7 @@
     <string name="token_error_seis">Ingrese los 6 dígitos del código</string>
     <string name="token_carga_detenida">La operación se detuvo.</string>
     <string name="token_error_titulo">No pudimos preparar su token</string>
-    <string name="inicio_token_texto">Su llave de acceso, siempre a mano.</string>
-    <string name="inicio_ver_token">Ver mi código</string>
     <string name="acceso_token_detalle">Ver su código seguro</string>
-    <string name="acceso_expedientes_detalle">Consultar y gestionar</string>
     <string name="acceso_seguimiento_detalle">Solo lo que falta completar</string>
     <string name="acceso_cumplimiento_detalle">Control de plazos</string>
     <string name="acceso_personal_detalle">Directorio de personal</string>

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- El escudo ocupa el 76% del alto de su imagen. Se encoge 10dp por lado dentro del
-     lienzo de 108dp para que quepa entero en el recorte circular del lanzador, y el
-     empalme con el fondo queda fuera de la zona visible. -->
+<!--
+  Margen de 20dp sobre el lienzo de 108dp: el medallón queda en 68dp y entra completo en
+  la zona segura de 66dp, así el aro dorado no se corta con ninguna máscara del lanzador
+  (círculo, cuadrado redondeado o gota).
+-->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/logo_escudo"
-    android:inset="10dp" />
+    android:drawable="@drawable/logo_mascota_refinada"
+    android:inset="20dp" />

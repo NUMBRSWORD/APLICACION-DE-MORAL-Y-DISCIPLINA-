@@ -272,6 +272,48 @@ public class ModulosTest {
         }
     }
 
+    @Test public void oscuroPermaneceEnPanelYEfectivosAunqueLaWebPidaClaro() throws Exception {
+        WebActivity.htmlPrueba=WebActivity.htmlPrueba
+                .replace("</nav>","<button class=\"tab-btn\" data-view=\"panel\">Panel</button></nav>")
+                .replace("</main>","<section id=\"view-panel\" class=\"view hidden\"><div class=\"view-header\"><h2>Panel mensual</h2></div><div id=\"panelStats\" class=\"panel-stats\"><div class=\"stat-tile\"><div class=\"stat-value\">12</div><div class=\"stat-label\">Casos</div></div></div><div class=\"detail-card panel-chart-card\"><h3>Tendencia</h3><div class=\"panel-chart-wrap\"></div></div></section></main>");
+        for(String vista:new String[]{"panel","efectivos"}){
+            try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo(vista))){
+                esperar(R.id.webView,null);
+                s.onActivity(a->a.getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_YES));
+                esperarTema(s,"dark");
+                assertEquals("\"dark\"",js(s,"localStorage.getItem('tema')"));
+                js(s,"window.marcaSinRecarga=7;document.documentElement.setAttribute('data-theme','light')");
+                esperarJs(s,"document.documentElement.getAttribute('data-theme')==='dark'");
+                assertEquals("7",js(s,"window.marcaSinRecarga"));
+                String selector=vista.equals("panel")?".stat-tile .stat-value":"#view-efectivos tbody td:nth-child(2)";
+                contrasteWeb(s,selector);
+                String fondo=js(s,"getComputedStyle(document.querySelector('"+
+                        (vista.equals("panel")?".stat-tile":"#view-efectivos tbody tr")+
+                        "')).backgroundColor");
+                assertTrue("La tarjeta debe permanecer oscura",ColorUtils.calculateLuminance(
+                        rgb(new JSONArray("["+fondo+"]").getString(0)))<0.15);
+                captura("modulo-"+vista+"-dark.png");
+            }
+        }
+    }
+
+    @Test public void graficosDelPanelRecibenElDisenoDelTemaNativo() throws Exception {
+        actualizacionesPrueba();
+        WebActivity.moduloPrueba += "\nconst chartQa=()=>({data:{datasets:[{}]},options:{plugins:{},scales:{x:{grid:{},ticks:{}},y:{grid:{},ticks:{}}}},update(){this.updated=true;}});"
+                + "let chartsPanel=window.qaCharts={estado:chartQa(),codigo:chartQa(),tendencia:chartQa()};";
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("panel"))){
+            esperar(R.id.webView,null);
+            s.onActivity(a->a.getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_YES));
+            esperarTema(s,"dark");
+            js(s,"window.__faltosSetTheme(true)");
+            esperarJs(s,"window.qaCharts.estado.updated && window.qaCharts.codigo.updated && window.qaCharts.tendencia.updated");
+            assertEquals("\"67%\"",js(s,"qaCharts.estado.options.cutout"));
+            assertEquals("true",js(s,"qaCharts.estado.options.plugins.legend.labels.usePointStyle"));
+            assertEquals("8",js(s,"qaCharts.codigo.data.datasets[0].borderRadius"));
+            assertEquals("3",js(s,"qaCharts.tendencia.data.datasets[0].borderWidth"));
+        }
+    }
+
     @Test public void seguimientoOscuroMuestraPasosLegibles() throws Exception {
         try(ActivityScenario<SeguimientoActivity> s=ActivityScenario.launch(SeguimientoActivity.class)){
             esperar(R.id.tvCantidadPendientes,"1");
@@ -315,6 +357,85 @@ public class ModulosTest {
 
     private void casoPrueba() throws Exception {
         WebActivity.moduloPrueba=asset("modulos.js")+"\n"+asset("casework.js");
+    }
+    private void actualizacionesPrueba() throws Exception {
+        WebActivity.moduloPrueba=asset("modulos.js")+"\n"+asset("github_updates.js");
+    }
+    @Test public void nuevosModulosConservanRutaYCarganDatosAntesDelPanel() throws Exception {
+        actualizacionesPrueba();
+        for(String vista:new String[]{"panel","agenda","roles","directivas","documentos","historial","seguimiento"}) {
+            try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo(vista))){
+                esperar(R.id.webView,null);
+                assertEquals("true",js(s,"!document.getElementById('view-"+vista+"').classList.contains('hidden')"));
+                assertEquals("\"123456\"",js(s,"updatesQa.currentCip()"));
+                if(vista.equals("panel")||vista.equals("agenda"))assertEquals("true",js(s,"updatesQa.panelSawNotes"));
+                if(vista.equals("panel")){
+                    js(s,"window.__faltosSetTheme(true)");
+                    esperarJs(s,"updatesQa.chartRenders===1");
+                }
+                js(s,"updatesQa.resume()");Thread.sleep(150);
+                assertEquals("1",js(s,"updatesQa.authedCalls"));
+            }
+        }
+    }
+    @Test public void herramientasSeparadasYGrupalesNoRegistranAutomaticamente() throws Exception {
+        actualizacionesPrueba();
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("herramientas"))){
+            esperar(R.id.webView,null);
+            assertEquals("7",js(s,"document.querySelectorAll('.native-tool').length"));
+            s.onActivity(a->a.getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_YES));esperarTema(s,"dark");
+            contrasteWeb(s,".native-tool strong");contrasteWeb(s,".native-tool span");
+            captura("herramientas-github-dark.png");
+        }
+        for(String vista:new String[]{"reincorporacion","continuan"}) {
+            try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo(vista))){
+                esperar(R.id.webView,null);
+                String id=vista.equals("reincorporacion")?"rlArchivo":"cfArchivo";
+                assertEquals("0",js(s,"document.getElementById('"+id+"').files.length"));
+                assertEquals("true",js(s,"document.getElementById('"+id+"').multiple"));
+                assertEquals("false",js(s,"window.submitted"));
+            }
+        }
+    }
+    @Test public void claveOTokenPendientesPermitenContinuarAlDestino() throws Exception {
+        for(String gate:new String[]{"pending","token"}){
+            actualizacionesPrueba();WebActivity.moduloPrueba+="\nupdatesQa."+gate+"=true;";
+            try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("panel"))){
+                esperar(R.id.webView,null);
+                assertEquals("0",js(s,"updatesQa.notesCalls"));
+                s.onActivity(a->{
+                    assertEquals(View.GONE,a.findViewById(R.id.progreso).getVisibility());
+                    assertTrue((a.getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0);
+                });
+                js(s,"updatesQa.resume()");
+                esperarJs(s,"!document.getElementById('view-panel').classList.contains('hidden')");
+                assertEquals("true",js(s,"updatesQa.panelSawNotes"));
+            }
+        }
+    }
+    @Test public void pasoSeguridadNoCargaExpedientesNiConfirmaPoliticas() throws Exception {
+        actualizacionesPrueba();WebActivity.moduloPrueba+="\nupdatesQa.pending=true;";
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("seguridad"))){
+            esperar(R.id.webView,null);
+            assertEquals("0",js(s,"updatesQa.authedCalls+updatesQa.notesCalls+updatesQa.profileCalls"));
+            assertEquals("true",js(s,"!document.getElementById('modalCambiarClave').classList.contains('hidden')"));
+        }
+    }
+    @Test public void errorCipNoUsaCorreoGoogleComoIdentificador() throws Exception {
+        actualizacionesPrueba();WebActivity.moduloPrueba+="\nupdatesQa.failProfile=true;";
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("panel"))){
+            esperar(R.id.estadoPanel,null);
+            assertEquals("null",js(s,"updatesQa.currentCip()"));
+            assertEquals("0",js(s,"updatesQa.notesCalls"));
+        }
+    }
+    @Test public void errorDeDatosNoSeMuestraComoPanelVacio() throws Exception {
+        actualizacionesPrueba();WebActivity.moduloPrueba+="\nupdatesQa.failNotes=true;";
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("panel"))){
+            esperar(R.id.estadoPanel,null);
+            assertEquals("true",js(s,"document.getElementById('view-panel').classList.contains('hidden')"));
+            s.onActivity(a->assertEquals(View.GONE,a.findViewById(R.id.progreso).getVisibility()));
+        }
     }
     private void esperarJs(ActivityScenario<WebActivity> s,String condicion) throws Exception {
         long limite=System.currentTimeMillis()+12000;

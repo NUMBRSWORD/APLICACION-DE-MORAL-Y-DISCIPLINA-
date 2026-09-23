@@ -19,6 +19,29 @@ public final class SupabaseApi {
     private SupabaseApi() {
     }
 
+    /** El servidor es quien determina si una cuenta tiene un cambio de clave pendiente. */
+    public static boolean necesitaCambiarClave(String token) throws IOException {
+        String valor = SupabaseAuth.pedir("POST", "/rest/v1/rpc/necesita_cambiar_clave", token, "{}", null).trim();
+        if (!"true".equals(valor) && !"false".equals(valor)) throw new IOException("Estado de seguridad no disponible");
+        return "true".equals(valor);
+    }
+
+    // ---------- Eliminación de la cuenta a pedido de la persona ----------
+
+    /** Devuelve "ok", "ya_pendiente" o "sin_sesion"; el servidor evita pedidos repetidos. */
+    public static String solicitarEliminacion(String token, String motivo)
+            throws IOException, JSONException {
+        JSONObject cuerpo = new JSONObject().put("p_motivo", motivo == null ? JSONObject.NULL : motivo);
+        return SupabaseAuth.pedir("POST", "/rest/v1/rpc/solicitar_eliminacion_cuenta", token,
+                cuerpo.toString(), null).trim().replace("\"", "");
+    }
+
+    public static boolean tieneEliminacionPendiente(String token) throws IOException {
+        String valor = SupabaseAuth.pedir("POST", "/rest/v1/rpc/tiene_eliminacion_pendiente",
+                token, "{}", null).trim();
+        return "true".equals(valor);
+    }
+
     public static JSONArray pendientes(String token, int offset) throws IOException, JSONException {
         String ruta = "/rest/v1/notas_informativas?select=id,grado,apellidos,nombres,numero_nota_falta,"
                 + "fecha_falta,codigo_infraccion,fecha_reincorporacion,imputacion_generada_at,fecha_descargo,"

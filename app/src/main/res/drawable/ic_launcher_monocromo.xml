@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Versión de un solo color de la mascota para los "iconos con tema" de Android 13 en
+  adelante. El sistema aplica su propio color, por eso el relleno es negro plano.
+  Todo el dibujo cabe en la zona segura de 66dp del lienzo de 108dp.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Aro del medallón. -->
+    <path
+        android:fillColor="#000000"
+        android:fillType="evenOdd"
+        android:pathData="M54,24 a30,30 0 1,0 0.01,0 z M54,31 a23,23 0 1,1 -0.01,0 z" />
+    <!-- Orejas, cabeza con hocico en punta, ojos y nariz recortados. -->
+    <path
+        android:fillColor="#000000"
+        android:fillType="evenOdd"
+        android:pathData="M40,43 a8.4,8.4 0 1,1 -0.01,0 z M68,43 a8.4,8.4 0 1,1 -0.01,0 z M54,41 C64,41 70.5,48 70.5,55.5 C70.5,64 62,72.5 54,75 C46,72.5 37.5,64 37.5,55.5 C37.5,48 44,41 54,41 z M47.6,54 a2.5,2.5 0 1,0 0.01,0 z M60.4,54 a2.5,2.5 0 1,0 0.01,0 z M54,66.5 a2.2,2.2 0 1,0 0.01,0 z" />
+</vector>

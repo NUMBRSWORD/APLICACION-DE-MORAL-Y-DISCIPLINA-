@@ -1,6 +1,6 @@
 # Flujo de acceso corregido
 
-Acceso → lectura y firma de políticas → Token Digital → panel de trabajo.
+Acceso → cambio de clave (solo si el servidor lo exige) → lectura y firma de políticas → Token Digital → panel de trabajo.
 
 La sesión guardada no navega por sí sola: requiere aceptación y el botón Continuar.
 La pantalla de políticas permanece abierta incluso si ya están firmadas. Un conjunto
@@ -19,7 +19,7 @@ a Supabase desde la aplicación.
 
 ## Pruebas
 
-La variante `qa` usa el paquete `com.hidalgoferrai.myapplication.qa`. Las pruebas
+La variante `qa` usa el paquete `com.hidalgoferrai.faltos.qa`. Las pruebas
 instrumentadas sustituyen el transporte HTTP por respuestas ficticias y verifican
 el paquete antes de limpiar sus preferencias. No utilizan la cuenta de la app real.
 
@@ -37,6 +37,10 @@ Para una comprobación real, abra la app, revise los términos, pulse Continuar,
 solo los documentos con los que esté conforme y active o verifique su token.
 
 ## Módulos independientes
+
+Para los accesos nuevos y la compatibilidad con las actualizaciones de GitHub de
+la versión 1.2, consultar `ACTUALIZACION-GITHUB-2026-09-21.md`. Historial por efectivo
+es distinto de Seguimiento de pendientes; el aviso de privacidad fue sincronizado.
 
 - Subir expediente abre una pantalla nativa: escáner de varias páginas o selector de PDF (máximo 20 MB). El documento se prepara y puede previsualizarse antes de pulsar Revisar y registrar. El alta sigue requiriendo la confirmación en el formulario web existente y el permiso de administrador.
 - Seguimiento consulta notas pendientes con ambos campos de cierre nulos (`orden_notificada_at`, `archivo_leve_generada_at`), bajo las políticas RLS existentes. Carga páginas de 100 y permite buscar entre las cargadas. Cada tarjeta muestra pasos numerados, comprobantes de avance (✓ y fecha), siguiente paso, pendientes y la acción para abrir su nota concreta. Las faltas leves muestran registro, reincorporación, imputación, descargo, orden y notificación final. Un paso posterior no marca automáticamente los anteriores. Si existe orden pero no fecha de descargo, se indica «Sin descargo registrado», sin inventar un descargo completado. Los informes administrativos y casos sin clasificación no se fuerzan a seguir la ruta de leves.

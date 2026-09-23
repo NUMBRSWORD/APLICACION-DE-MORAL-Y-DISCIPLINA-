@@ -12,9 +12,6 @@ import android.webkit.WebStorage;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import java.util.Calendar;
 
@@ -42,11 +39,8 @@ public class InicioActivity extends AppCompatActivity {
         }
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_inicio);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets barras = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(barras.left, barras.top, barras.right, barras.bottom);
-            return insets;
-        });
+        Tema.prepararBoton(this);
+        Diseno.bordes(this, false);
 
         ((TextView) findViewById(R.id.tvSaludo)).setText(saludo());
         String grado = Perfil.grado(this);
@@ -63,14 +57,22 @@ public class InicioActivity extends AppCompatActivity {
         });
         agregar(grid, R.string.subir_expediente, R.drawable.ic_expediente, "subir");
         agregar(grid, R.string.acceso_seguimiento, R.drawable.ic_seguimiento, "pendientes");
+        agregar(grid, R.string.historial_efectivo, R.drawable.ic_personal, "seguimiento");
         agregar(grid, R.string.acceso_cumplimiento, R.drawable.ic_cumplimiento, "cumplimiento");
         if (Perfil.esAdministrador(this)) {
+            agregar(grid, R.string.panel_mensual, R.drawable.ic_calendario, "panel");
             agregar(grid, R.string.acceso_personal, R.drawable.ic_personal, "efectivos");
             agregar(grid, R.string.recepcion_fisica, R.drawable.ic_recepcion, "recepcion-fisica");
         }
         agregar(grid, R.string.consulta_expediente, R.drawable.ic_mas, "consulta");
+        if (Perfil.esAdministrador(this))
+            agregar(grid, R.string.herramientas_titulo, R.drawable.ic_documento, "herramientas");
 
         findViewById(R.id.btnSalir).setOnClickListener(v -> cerrarSesion());
+        // Vía de baja exigida por Google Play; la equivalente pública está en la web.
+        findViewById(R.id.btnEliminarCuenta).setOnClickListener(v -> startActivity(
+                new Intent(this, EliminarCuentaActivity.class)
+                        .putExtra(EliminarCuentaActivity.EXTRA_TOKEN, tokenActual)));
     }
 
     private String saludo() {
@@ -97,12 +99,20 @@ public class InicioActivity extends AppCompatActivity {
         else if (etiqueta == R.string.modulo_archivo) detalle = R.string.modulo_archivo_detalle;
         else if (etiqueta == R.string.consulta_expediente) detalle = R.string.consulta_expediente_detalle;
         else if (etiqueta == R.string.recepcion_fisica) detalle = R.string.recepcion_fisica_detalle;
+        else if (etiqueta == R.string.historial_efectivo) detalle = R.string.historial_efectivo_detalle;
+        else if (etiqueta == R.string.panel_mensual) detalle = R.string.panel_mensual_detalle;
+        else if (etiqueta == R.string.herramientas_titulo) detalle = R.string.herramientas_detalle;
         ((TextView) tarjeta.findViewById(R.id.detalle)).setText(detalle);
 
+        // Las dos tarjetas de una misma fila se estiran a la altura de la más alta: un título
+        // de dos líneas ya no deja una tarjeta corta al lado de una larga, y las flechas quedan
+        // alineadas. La fila se alinea con FILL y sin peso: con peso, dentro de una vista que
+        // se desplaza, no hay espacio sobrante que repartir y las tarjetas quedarían en cero.
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, 1f);
+        lp.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, GridLayout.FILL);
         lp.setMargins(dp(6), dp(6), dp(6), dp(6));
         tarjeta.setLayoutParams(lp);
 

@@ -38,6 +38,8 @@ public class FlujoAccesoTest {
     private final AtomicInteger altas = new AtomicInteger();
     private final AtomicInteger verificaciones = new AtomicInteger();
     private volatile boolean falloFactores, falloVerificacion, documentosVacios, firmado;
+    private volatile boolean clavePendiente, falloClave;
+    private volatile boolean eliminacionPendiente, falloEliminacion;
     private volatile String factores = "[]";
     private static final String UID = "usuario-prueba-aislada";
     private static final String SESION = "{\"access_token\":\"sesion-ficticia\",\"refresh_token\":\"refresco-ficticio\",\"user\":{\"id\":\"usuario-prueba-aislada\",\"email\":\"prueba@example.invalid\"}}";
@@ -62,6 +64,7 @@ public class FlujoAccesoTest {
         });
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
         SupabaseAuth.transporte = original;
+        WebActivity.htmlPrueba=null; WebActivity.moduloPrueba=null;
         SesionActual.borrar();
     }
 
@@ -85,6 +88,16 @@ public class FlujoAccesoTest {
         }
         if (ruta.startsWith("/rest/v1/profiles?select=estado")) return "[{\"estado\":\"aprobado\"}]";
         if (ruta.startsWith("/rest/v1/profiles?select=role")) return "[{\"role\":\"admin\"}]";
+        if (ruta.equals("/rest/v1/rpc/necesita_cambiar_clave")) {
+            if (falloClave) throw new SocketTimeoutException("simulado");
+            return clavePendiente ? "true" : "false";
+        }
+        if (ruta.equals("/rest/v1/rpc/tiene_eliminacion_pendiente")) return eliminacionPendiente ? "true" : "false";
+        if (ruta.equals("/rest/v1/rpc/solicitar_eliminacion_cuenta")) {
+            if (falloEliminacion) throw new SocketTimeoutException("simulado");
+            eliminacionPendiente = true;
+            return "\"ok\"";
+        }
         if (ruta.startsWith("/rest/v1/aceptaciones_terminos")) return "";
         if (ruta.startsWith("/rest/v1/solicitudes_acceso"))
             return "[{\"grado\":\"S1 PNP\",\"nombres\":\"Cuenta\",\"apellidos\":\"Demostración\"}]";
@@ -127,7 +140,8 @@ public class FlujoAccesoTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             for (Activity a : ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)) {
                 // Nunca captura pantallas con tokens o contraseñas, ni la aplicación de uso real.
-                if (a instanceof TokenActivity) continue;
+                if (a instanceof TokenActivity || (a.getWindow().getAttributes().flags
+                        & android.view.WindowManager.LayoutParams.FLAG_SECURE)!=0) continue;
                 View vista = a.getWindow().getDecorView();
                 Bitmap imagen = Bitmap.createBitmap(vista.getWidth(), vista.getHeight(), Bitmap.Config.ARGB_8888);
                 vista.draw(new Canvas(imagen));
@@ -162,6 +176,48 @@ public class FlujoAccesoTest {
             esperarTexto(R.id.tvResumenFirmas, "0 de 1");
             assertEquals(0, altas.get());
             captura("politicas-claro.png");
+        }
+    }
+    private String assetQa(String nombre) throws IOException {
+        try(java.io.InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open(nombre);
+            java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){
+            byte[] bytes=new byte[4096];int n;while((n=in.read(bytes))!=-1)out.write(bytes,0,n);
+            return out.toString("UTF-8");
+        }
+    }
+    @Test public void clavePendienteVuelveALecturaDePoliticasTrasConfirmarServidor() throws Exception {
+        clavePendiente=true;
+        WebActivity.htmlPrueba=assetQa("modulos.html");
+        WebActivity.moduloPrueba=assetQa("modulos.js")+"\n"+assetQa("github_updates.js")+"\nupdatesQa.pending=true;";
+        AlmacenSeguro.guardarRefresco(contexto,"refresco-ficticio");
+        try(ActivityScenario<LoginActivity> s=ActivityScenario.launch(LoginActivity.class)){
+            onView(withId(R.id.cbAcepto)).perform(scrollTo(),click());
+            onView(withId(R.id.btnGoogle)).perform(scrollTo(),click());
+            esperarTexto(R.id.tvModuloTitulo,contexto.getString(R.string.modulo_seguridad));
+            long fin=System.currentTimeMillis()+10000;final boolean[] listo={false};
+            while(!listo[0]&&System.currentTimeMillis()<fin){
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
+                    for(Activity a:ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED))
+                        if(a instanceof WebActivity&&a.findViewById(R.id.webView).isShown())listo[0]=true;
+                });Thread.sleep(80);
+            }
+            assertTrue(listo[0]);assertEquals(0,altas.get());assertFalse(firmado);
+            clavePendiente=false; // Simula la confirmación del servidor, no un cambio real.
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
+                for(Activity a:ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED))
+                    if(a instanceof WebActivity)((android.webkit.WebView)a.findViewById(R.id.webView)).evaluateJavascript("updatesQa.resume()",null);
+            });
+            esperarTexto(R.id.tvResumenFirmas,"0 de 1");assertFalse(firmado);assertEquals(0,altas.get());
+        }
+    }
+    @Test public void errorAlConsultarClaveNoPermiteAvanzar() throws Exception {
+        falloClave=true;AlmacenSeguro.guardarRefresco(contexto,"refresco-ficticio");
+        try(ActivityScenario<LoginActivity> s=ActivityScenario.launch(LoginActivity.class)){
+            onView(withId(R.id.cbAcepto)).perform(scrollTo(),click());
+            onView(withId(R.id.btnGoogle)).perform(scrollTo(),click());
+            esperarTexto(R.id.estadoTitulo,contexto.getString(R.string.error_acceso_titulo));
+            s.onActivity(a->assertEquals(View.GONE,a.findViewById(R.id.progreso).getVisibility()));
+            assertFalse(firmado);assertEquals(0,altas.get());
         }
     }
 
@@ -270,6 +326,32 @@ public class FlujoAccesoTest {
         try (ActivityScenario<FirmaActivity> escenario = ActivityScenario.launch(firmaIntent())) {
             esperarTexto(R.id.tvResumenFirmas, "0 de 1");
             captura("politicas-claro.png");
+        }
+    }
+
+    /** Vía de baja exigida por Google Play: debe registrarse una sola vez y quedar a la vista. */
+    @Test public void eliminarCuentaRegistraElPedidoUnaSolaVez() throws Exception {
+        Intent intent = new Intent(contexto, EliminarCuentaActivity.class)
+                .putExtra(EliminarCuentaActivity.EXTRA_TOKEN, "sesion-ficticia");
+        try (ActivityScenario<EliminarCuentaActivity> escenario = ActivityScenario.launch(intent)) {
+            onView(withId(R.id.btnSolicitar)).perform(scrollTo(), click());
+            onView(withText(R.string.eliminar_confirmar_si)).perform(click());
+            esperarTexto(R.id.tvEstado, "pedido de eliminación en curso");
+            escenario.onActivity(a -> assertFalse(a.findViewById(R.id.btnSolicitar).isEnabled()));
+        }
+        // Al volver a entrar, la pantalla ya muestra el pedido en curso y no admite otro.
+        try (ActivityScenario<EliminarCuentaActivity> escenario = ActivityScenario.launch(intent)) {
+            esperarTexto(R.id.tvEstado, "pedido de eliminación en curso");
+            escenario.onActivity(a -> assertFalse(a.findViewById(R.id.btnSolicitar).isEnabled()));
+        }
+    }
+
+    /** Sin sesión no se puede identificar la cuenta: se indica la vía pública. */
+    @Test public void eliminarCuentaSinSesionExplicaLaViaPublica() throws Exception {
+        try (ActivityScenario<EliminarCuentaActivity> escenario = ActivityScenario.launch(
+                new Intent(contexto, EliminarCuentaActivity.class))) {
+            esperarTexto(R.id.tvEstado, "debe haber iniciado sesión");
+            escenario.onActivity(a -> assertFalse(a.findViewById(R.id.btnSolicitar).isEnabled()));
         }
     }
 

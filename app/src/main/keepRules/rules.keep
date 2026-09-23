@@ -1,12 +1,12 @@
-# Add project specific R8 rules here.
-# AGP will combine all keep rule files in src/main/keepRules to pass to R8
+# Reglas de conservación para R8 (AGP junta todos los archivos de src/main/keepRules).
 #
-# For more details, see
-#   https://d.android.com/r/tools/r8/keep-rules
+# Comprobado el 23/09/2026: sin estas reglas, al abrir la aplicación optimizada el
+# registro muestra "NoSuchMethodException: CommonComponentRegistrar.<init>" y el
+# escáner de documentos queda inservible. ML Kit descubre sus componentes por
+# reflexión a partir de metadatos del manifiesto, así que R8 no puede ver esos usos.
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_** { *; }
+-keep class * implements com.google.firebase.components.ComponentRegistrar { <init>(); }
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# El puente con la web usa WebMessageListener (no @JavascriptInterface), por lo que no
+# hace falta conservar nada más para la vista web.

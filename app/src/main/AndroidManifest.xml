@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:name=".FaltosApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -35,7 +36,7 @@
 
                 <data
                     android:host="auth"
-                    android:scheme="faltas" />
+                    android:scheme="${oauthRedirectScheme}" />
             </intent-filter>
         </activity>
         <activity
@@ -55,6 +56,10 @@
         <activity
             android:name=".TokenActivity"
             android:exported="false" />
+        <activity
+            android:name=".EliminarCuentaActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".InicioActivity"
             android:exported="false" />
