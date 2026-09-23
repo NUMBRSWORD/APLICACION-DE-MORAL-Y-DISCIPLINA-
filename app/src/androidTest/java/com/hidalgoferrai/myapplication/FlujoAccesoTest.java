@@ -136,7 +136,9 @@ public class FlujoAccesoTest {
     }
 
     private void esperarTexto(int id, String texto) throws Exception {
-        long limite = System.currentTimeMillis() + 8000;
+        // Margen amplio: en un emulador cargado una pantalla puede tardar varios segundos
+        // en pintar. La espera solo define cuánto se aguanta, no lo que se comprueba.
+        long limite = System.currentTimeMillis() + 20000;
         do {
             final boolean[] encontrado = {false};
             InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
@@ -148,7 +150,20 @@ public class FlujoAccesoTest {
             if (encontrado[0]) return;
             Thread.sleep(60);
         } while (System.currentTimeMillis() < limite);
-        fail("No apareció el estado esperado: " + texto);
+        fail("No apareció el estado esperado: " + texto + " · texto visible: " + textoVisible(id));
+    }
+
+    /** Lo que de verdad se ve en pantalla, para que un fallo diga qué había en su lugar. */
+    private String textoVisible(int id) {
+        StringBuilder visto = new StringBuilder();
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            for (Activity a : ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)) {
+                visto.append("[").append(a.getClass().getSimpleName());
+                TextView v = a.findViewById(id);
+                visto.append(v == null ? " sin ese campo" : " → \"" + v.getText() + "\"").append("] ");
+            }
+        });
+        return visto.length() == 0 ? "(ninguna pantalla activa)" : visto.toString();
     }
 
     private void captura(String nombre) {

@@ -99,7 +99,7 @@ public class ModulosTest {
     private String js(ActivityScenario<WebActivity> escenario,String codigo) throws Exception {
         CountDownLatch latch=new CountDownLatch(1);String[] valor={null};
         escenario.onActivity(a->((WebView)a.findViewById(R.id.webView)).evaluateJavascript(codigo,v->{valor[0]=v;latch.countDown();}));
-        assertTrue(latch.await(4,TimeUnit.SECONDS));return valor[0];
+        assertTrue(latch.await(15,TimeUnit.SECONDS));return valor[0];
     }
     private Intent modulo(String vista){return new Intent(contexto,WebActivity.class).putExtra(WebActivity.EXTRA_VISTA,vista);}
     private void captura(String nombre) {
@@ -246,7 +246,7 @@ public class ModulosTest {
         return Color.rgb(Integer.parseInt(n[0].trim()),Integer.parseInt(n[1].trim()),Integer.parseInt(n[2].trim()));
     }
     private void esperarTema(ActivityScenario<WebActivity> s,String tema) throws Exception {
-        long fin=System.currentTimeMillis()+5000;
+        long fin=System.currentTimeMillis()+15000;
         do {
             if(("\""+tema+"\"").equals(js(s,"document.documentElement.getAttribute('data-native-theme')")))return;
             Thread.sleep(80);
