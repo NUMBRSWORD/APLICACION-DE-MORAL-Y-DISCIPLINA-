@@ -57,6 +57,9 @@
             android:name=".TokenActivity"
             android:exported="false" />
         <activity
+            android:name=".RecuperacionActivity"
+            android:exported="false" />
+        <activity
             android:name=".EliminarCuentaActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

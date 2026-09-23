@@ -51,8 +51,40 @@ public class TokenInferior extends BottomSheetDialogFragment {
                     .putExtra(TokenActivity.EXTRA_USUARIO_ID, uid));
             dismiss();
         });
+        // Quien activó su token antes de que existieran los códigos también puede obtenerlos.
+        contenido.findViewById(R.id.btnCodigosRespaldo).setOnClickListener(v -> confirmarCodigos());
         if (secreto == null) sinToken();
         return contenido;
+    }
+
+    private void confirmarCodigos() {
+        String acceso = tokenDeSesion();
+        if (acceso == null) {
+            android.widget.Toast.makeText(requireContext(), R.string.error_sesion,
+                    android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.recuperacion_nuevos)
+                .setMessage(R.string.recuperacion_reemplaza)
+                .setNegativeButton(R.string.eliminar_cancelar, null)
+                .setPositiveButton(R.string.recuperacion_generar, (d, b) -> {
+                    startActivity(new Intent(requireContext(), RecuperacionActivity.class)
+                            .putExtra(RecuperacionActivity.EXTRA_TOKEN, acceso));
+                    dismiss();
+                })
+                .show();
+    }
+
+    private String tokenDeSesion() {
+        try {
+            String sesion = SesionActual.obtener(requireContext());
+            if (sesion == null) return null;
+            String acceso = new org.json.JSONObject(sesion).optString("access_token", null);
+            return acceso == null || acceso.isEmpty() ? null : acceso;
+        } catch (Exception e) {
+            return null;
+        }
     }
     private void sinToken() {
         secreto = null;

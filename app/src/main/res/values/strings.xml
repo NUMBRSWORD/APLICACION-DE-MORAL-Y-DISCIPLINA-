@@ -133,4 +133,27 @@
     <string name="eliminar_error">No se pudo registrar el pedido. Revise su conexión e inténtelo de nuevo.</string>
     <string name="eliminar_web">También puede solicitarla sin instalar la aplicación en:\nnumbrsword.github.io/moral-y-disciplina/eliminar-cuenta.html</string>
     <string name="inicio_eliminar_cuenta">Eliminar mi cuenta</string>
+
+    <string name="recuperacion_titulo">Códigos de recuperación</string>
+    <string name="recuperacion_paso">GUÁRDELOS ANTES DE CONTINUAR</string>
+    <string name="recuperacion_subtitulo">Si pierde este teléfono, estos códigos son su única forma de volver a activar el Token Digital sin depender de nadie.</string>
+    <string name="recuperacion_aviso">Cada código sirve una sola vez. Anótelos en papel o guárdelos en su gestor de contraseñas, nunca en este mismo teléfono. No se volverán a mostrar; si los pierde, genere unos nuevos desde su Token Digital.</string>
+    <string name="recuperacion_copiar">Copiar los códigos</string>
+    <string name="recuperacion_copiados">Códigos copiados</string>
+    <string name="recuperacion_guardados">Ya guardé mis códigos en un lugar seguro</string>
+    <string name="recuperacion_continuar">Continuar</string>
+    <string name="recuperacion_continuar_sin">Continuar sin códigos</string>
+    <string name="recuperacion_confirme">Confirme que guardó sus códigos antes de salir.</string>
+    <string name="recuperacion_nuevos">Generar códigos de recuperación</string>
+    <string name="recuperacion_reemplaza">Se crearán ocho códigos nuevos y los anteriores dejarán de servir. Úselo si nunca los guardó o si cree que alguien más los vio.</string>
+    <string name="recuperacion_generar">Generar</string>
+
+    <string name="recuperar_entrada">Perdí el teléfono de mi token</string>
+    <string name="recuperar_titulo">Recuperar el Token Digital</string>
+    <string name="recuperar_mensaje">Escriba uno de los códigos de recuperación que guardó al activar su token. Se usará una sola vez y podrá activar el token en este teléfono.</string>
+    <string name="recuperar_campo">Código de recuperación</string>
+    <string name="recuperar_boton">Recuperar</string>
+    <string name="recuperar_comprobando">Comprobando el código…</string>
+    <string name="recuperar_invalido">Ese código no es válido o ya fue usado. Revise la lista que guardó; si no la tiene, pida a un administrador que desactive su token.</string>
+    <string name="recuperar_bloqueado">Demasiados intentos fallidos. Espere una hora o pida a un administrador que desactive su token.</string>
 </resources>

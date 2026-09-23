@@ -28,6 +28,8 @@ import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.*;
 import static androidx.test.espresso.matcher.ViewMatchers.*;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
+import static androidx.test.espresso.matcher.RootMatchers.isDialog;
+import static org.hamcrest.Matchers.not;
 
 /** Solo se ejecuta en com.hidalgoferrai.myapplication.qa. Nunca usa la red real. */
 @RunWith(AndroidJUnit4.class)
@@ -40,6 +42,7 @@ public class FlujoAccesoTest {
     private volatile boolean falloFactores, falloVerificacion, documentosVacios, firmado;
     private volatile boolean clavePendiente, falloClave;
     private volatile boolean eliminacionPendiente, falloEliminacion;
+    private volatile boolean codigosEntregados;
     private volatile String factores = "[]";
     private static final String UID = "usuario-prueba-aislada";
     private static final String SESION = "{\"access_token\":\"sesion-ficticia\",\"refresh_token\":\"refresco-ficticio\",\"user\":{\"id\":\"usuario-prueba-aislada\",\"email\":\"prueba@example.invalid\"}}";
@@ -91,6 +94,18 @@ public class FlujoAccesoTest {
         if (ruta.equals("/rest/v1/rpc/necesita_cambiar_clave")) {
             if (falloClave) throw new SocketTimeoutException("simulado");
             return clavePendiente ? "true" : "false";
+        }
+        if (ruta.equals("/rest/v1/rpc/generar_codigos_recuperacion")) {
+            codigosEntregados = true;
+            return "[\"ABCDE-FGHIJ\",\"KLMNP-QRSTU\",\"VWXYZ-23456\",\"789AB-CDEFG\","
+                    + "\"HJKLM-NPQRS\",\"TUVWX-YZ234\",\"56789-ABCDE\",\"FGHJK-LMNPQ\"]";
+        }
+        if (ruta.equals("/rest/v1/rpc/usar_codigo_recuperacion")) {
+            if (cuerpo != null && cuerpo.contains("ABCDE-FGHIJ")) {
+                factores = "[]";
+                return "\"ok\"";
+            }
+            return "\"invalido\"";
         }
         if (ruta.equals("/rest/v1/rpc/tiene_eliminacion_pendiente")) return eliminacionPendiente ? "true" : "false";
         if (ruta.equals("/rest/v1/rpc/solicitar_eliminacion_cuenta")) {
@@ -258,6 +273,7 @@ public class FlujoAccesoTest {
             assertNotNull(AlmacenSeguro.secreto(contexto, UID));
             falloVerificacion = false;
             onView(withId(R.id.btnReintentar)).perform(scrollTo(), click());
+            cerrarCodigosDeRespaldo();
             esperarTexto(R.id.tvEstadoToken, "PROTECCIÓN ACTIVA");
             assertEquals(1, altas.get());
             assertEquals(2, verificaciones.get());
@@ -329,6 +345,50 @@ public class FlujoAccesoTest {
         }
     }
 
+    /** Al activar el token se entregan los códigos de respaldo antes de seguir. */
+    @Test public void activarElTokenEntregaCodigosDeRespaldo() throws Exception {
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
+            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
+            esperarTexto(R.id.tvCodigos, "ABCDE-FGHIJ");
+            assertTrue(codigosEntregados);
+            // No se puede continuar sin confirmar que quedaron guardados.
+            onView(withId(R.id.btnContinuar)).check(matches(not(isEnabled())));
+            onView(withId(R.id.cbGuardados)).perform(scrollTo(), click());
+            onView(withId(R.id.btnContinuar)).perform(scrollTo(), click());
+            esperarTexto(R.id.tvEstadoToken, "PROTECCIÓN ACTIVA");
+        }
+    }
+
+    /** Perder el teléfono ya no deja a nadie fuera: un código de respaldo reactiva el token. */
+    @Test public void codigoDeRespaldoPermiteActivarEnOtroTelefono() throws Exception {
+        factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            onView(withId(R.id.btnPerdiTelefono)).perform(scrollTo(), click());
+            onView(withId(R.id.etCodigoRecuperacion)).inRoot(isDialog())
+                    .perform(replaceText("ABCDE-FGHIJ"));
+            onView(withText(R.string.recuperar_boton)).inRoot(isDialog()).perform(click());
+            // Se inscribe un token nuevo y se vuelven a entregar los códigos.
+            esperarTexto(R.id.tvCodigos, "ABCDE-FGHIJ");
+            assertEquals(1, altas.get());
+        }
+    }
+
+    /** Un código equivocado no borra nada ni deja activar. */
+    @Test public void codigoDeRespaldoInvalidoNoActivaNada() throws Exception {
+        factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            onView(withId(R.id.btnPerdiTelefono)).perform(scrollTo(), click());
+            onView(withId(R.id.etCodigoRecuperacion)).inRoot(isDialog())
+                    .perform(replaceText("ZZZZZ-ZZZZZ"));
+            onView(withText(R.string.recuperar_boton)).inRoot(isDialog()).perform(click());
+            esperarTexto(R.id.estadoMensaje, "no es válido");
+            assertEquals(0, altas.get());
+        }
+    }
+
     /** Vía de baja exigida por Google Play: debe registrarse una sola vez y quedar a la vista. */
     @Test public void eliminarCuentaRegistraElPedidoUnaSolaVez() throws Exception {
         Intent intent = new Intent(contexto, EliminarCuentaActivity.class)
@@ -366,8 +426,17 @@ public class FlujoAccesoTest {
             esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
             falloVerificacion = false;
             onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
+            cerrarCodigosDeRespaldo();
             esperarTexto(R.id.tvEstadoToken, "PROTECCIÓN ACTIVA");
             assertEquals(1, altas.get());
         }
+    }
+
+    /** Tras activar siempre aparecen los códigos de respaldo: hay que confirmarlos para seguir. */
+    private void cerrarCodigosDeRespaldo() throws Exception {
+        esperarTexto(R.id.tvCodigos, "-");
+        onView(withId(R.id.cbGuardados)).perform(scrollTo(), click());
+        onView(withId(R.id.btnContinuar)).perform(scrollTo(), click());
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
     }
 }

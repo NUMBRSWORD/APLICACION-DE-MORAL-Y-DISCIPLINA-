@@ -35,6 +35,9 @@ public class TokenActivity extends AppCompatActivity {
     private String token, usuarioId, sesion, secreto, factorId;
     private boolean modoIngreso, externo, ocupado, listo, sesionVerificada;
     private Runnable reintento;
+    private final androidx.activity.result.ActivityResultLauncher<Intent> codigosRespaldo =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), resultado -> mostrarListo());
 
     private final Runnable tic = new Runnable() {
         @Override public void run() {
@@ -82,6 +85,9 @@ public class TokenActivity extends AppCompatActivity {
         });
         findViewById(R.id.btnReintentar).setOnClickListener(v -> {
             if (!ocupado && reintento != null) reintento.run();
+        });
+        findViewById(R.id.btnPerdiTelefono).setOnClickListener(v -> {
+            if (!ocupado) pedirCodigoRecuperacion();
         });
         MaterialButton volver = findViewById(R.id.btnVolver);
         volver.setText(modoIngreso ? R.string.token_volver_politicas : R.string.volver_inicio);
@@ -184,8 +190,65 @@ public class TokenActivity extends AppCompatActivity {
                 AlmacenSeguro.guardarTokenPendiente(this, usuarioId, factorId, secreto);
                 verificarEnServidor(Totp.codigo(secreto));
                 AlmacenSeguro.marcarTokenVerificado(this, usuarioId);
-                publicar(this::mostrarListo);
+                // Al activar se entregan los códigos de respaldo: son la única salida propia
+                // si después se pierde el teléfono.
+                publicar(() -> {
+                    ocupado = false;
+                    codigosRespaldo.launch(new Intent(this, RecuperacionActivity.class)
+                            .putExtra(RecuperacionActivity.EXTRA_TOKEN, token));
+                });
             } catch (Exception e) { publicar(() -> mostrarError(e, this::activar)); }
+        });
+    }
+
+    /** Pide un código de respaldo y, si es válido, deja el token listo para activarse de nuevo. */
+    private void pedirCodigoRecuperacion() {
+        final com.google.android.material.textfield.TextInputEditText campo =
+                new com.google.android.material.textfield.TextInputEditText(this);
+        campo.setId(R.id.etCodigoRecuperacion);
+        campo.setHint(R.string.recuperar_campo);
+        campo.setSingleLine(true);
+        int margen = Math.round(getResources().getDisplayMetrics().density * 24);
+        android.widget.FrameLayout caja = new android.widget.FrameLayout(this);
+        caja.setPadding(margen, margen / 2, margen, 0);
+        caja.addView(campo);
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.recuperar_titulo)
+                .setMessage(R.string.recuperar_mensaje)
+                .setView(caja)
+                .setNegativeButton(R.string.eliminar_cancelar, null)
+                .setPositiveButton(R.string.recuperar_boton, (dialogo, boton) ->
+                        usarCodigoRecuperacion(campo.getText() == null ? "" : campo.getText().toString()))
+                .show();
+    }
+
+    private void usarCodigoRecuperacion(String codigo) {
+        trabajando(R.string.recuperar_comprobando);
+        hilo.execute(() -> {
+            try {
+                String estado = SupabaseApi.usarCodigoRecuperacion(token, codigo);
+                if (!"ok".equals(estado)) {
+                    publicar(() -> {
+                        detenerCarga();
+                        mostrarExterno();
+                        Diseno.error(this, R.string.recuperar_titulo,
+                                "bloqueado".equals(estado) ? R.string.recuperar_bloqueado
+                                        : R.string.recuperar_invalido, false);
+                    });
+                    return;
+                }
+                // El servidor ya borró el factor: se empieza de cero en este teléfono.
+                AlmacenSeguro.borrar(this);
+                secreto = null;
+                factorId = null;
+                externo = false;
+                publicar(() -> {
+                    layoutCodigo.setVisibility(View.GONE);
+                    activar();
+                });
+            } catch (Exception e) {
+                publicar(() -> mostrarError(e, this::pedirCodigoRecuperacion));
+            }
         });
     }
 
@@ -282,6 +345,8 @@ public class TokenActivity extends AppCompatActivity {
         layoutCodigo.setVisibility(View.VISIBLE);
         btnEntrar.setText(R.string.token_continuar);
         btnEntrar.setEnabled(true);
+        // Salida propia para quien ya no tiene el teléfono donde activó el token.
+        findViewById(R.id.btnPerdiTelefono).setVisibility(View.VISIBLE);
     }
 
     private void iniciarReloj() {

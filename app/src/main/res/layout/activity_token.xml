@@ -154,6 +154,11 @@
                     app:iconGravity="textStart"
                     app:iconTint="@color/sobre_primario" />
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPerdiTelefono" style="@style/Widget.MESADEPARTES.Button.Text"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" android:visibility="gone"
+                    android:text="@string/recuperar_entrada"/>
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnVolver" style="@style/Widget.MESADEPARTES.Button.Text"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" android:text="@string/token_volver_politicas"/>

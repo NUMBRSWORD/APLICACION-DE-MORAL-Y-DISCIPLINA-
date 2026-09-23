@@ -40,6 +40,31 @@ aquí se afirma se comprobó ejecutando la aplicación, no solo leyendo el códi
    quedaba en el navegador, con la aplicación todavía sin sesión. Ahora ese bloque
    se oculta dentro de la aplicación y se indica usar el botón propio.
 
+## Pérdida del teléfono del Token Digital (revisado el 23/09/2026)
+
+Comprobado en el servidor: la única forma de quitar un token era `desactivar_token()`,
+que exige ser administrador. Es decir, quien perdía el teléfono dependía de otra
+persona, y un administrador que perdiera el suyo **no tenía ninguna salida dentro de
+la aplicación**. En ese momento había 2 administradores, 13 cuentas aprobadas y un
+solo token activo.
+
+Ahora, al activar el token se entregan **ocho códigos de recuperación de un solo uso**:
+
+- Se muestran una vez, en una pantalla que no admite capturas, y hay que confirmar
+  que se guardaron antes de continuar.
+- En el servidor solo queda el resumen cifrado (bcrypt) de cada código; la tabla no
+  es legible con la clave pública, solo a través de las funciones.
+- `usar_codigo_recuperacion()` borra el factor y permite activar el token en el
+  teléfono nuevo. Diez intentos fallidos en una hora bloquean la vía por una hora.
+- Quien ya tenía el token activado —el caso del administrador actual— puede
+  generarlos desde «Token Digital → Generar códigos de recuperación».
+- Si además se pierden los códigos, sigue existiendo la vía del administrador
+  (`desactivar_token`) y, para el dueño del proyecto, borrar el factor desde el
+  panel de Supabase.
+
+Probado de extremo a extremo: en la base (generar, usar con ruido de formato,
+reusar, código inválido) y en la aplicación con tres pruebas instrumentadas.
+
 ## Requisitos de Google Play resueltos
 
 3. **Eliminación de cuenta** (su ausencia bastaba para rechazar el envío):

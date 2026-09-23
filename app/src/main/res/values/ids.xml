@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- El campo del código de recuperación se crea desde el código, dentro de un diálogo;
+         necesita un identificador estable para que las pruebas puedan escribir en él. -->
+    <item name="etCodigoRecuperacion" type="id" />
+</resources>

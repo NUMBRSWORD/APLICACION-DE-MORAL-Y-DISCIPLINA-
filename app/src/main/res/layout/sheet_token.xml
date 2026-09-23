@@ -19,6 +19,10 @@
     <com.google.android.material.button.MaterialButton android:id="@+id/btnVerificarInferior"
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="20dp" android:visibility="gone" android:text="@string/token_abrir_verificacion"/>
+    <com.google.android.material.button.MaterialButton android:id="@+id/btnCodigosRespaldo"
+        style="@style/Widget.MESADEPARTES.Button.Outlined"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="16dp" android:text="@string/recuperacion_nuevos"/>
     <com.google.android.material.button.MaterialButton android:id="@+id/btnCerrarToken"
         style="@style/Widget.MESADEPARTES.Button.Outlined"
         android:layout_width="match_parent" android:layout_height="wrap_content"

@@ -26,6 +26,39 @@ public final class SupabaseApi {
         return "true".equals(valor);
     }
 
+    // ---------- Recuperación del Token Digital ----------
+
+    /**
+     * Entrega ocho códigos de un solo uso y anula los anteriores. El texto solo viaja en
+     * esta respuesta: el servidor guarda únicamente el resumen cifrado de cada uno.
+     */
+    public static String[] generarCodigosRecuperacion(String token)
+            throws IOException, JSONException {
+        JSONArray codigos = new JSONArray(SupabaseAuth.pedir(
+                "POST", "/rest/v1/rpc/generar_codigos_recuperacion", token, "{}", null));
+        String[] salida = new String[codigos.length()];
+        for (int i = 0; i < codigos.length(); i++) salida[i] = codigos.getString(i);
+        return salida;
+    }
+
+    /** "ok" (el token queda borrado y se vuelve a activar), "invalido" o "bloqueado". */
+    public static String usarCodigoRecuperacion(String token, String codigo)
+            throws IOException, JSONException {
+        JSONObject cuerpo = new JSONObject().put("p_codigo", codigo == null ? "" : codigo);
+        return SupabaseAuth.pedir("POST", "/rest/v1/rpc/usar_codigo_recuperacion", token,
+                cuerpo.toString(), null).trim().replace("\"", "");
+    }
+
+    public static int codigosRecuperacionDisponibles(String token) throws IOException {
+        String valor = SupabaseAuth.pedir("POST", "/rest/v1/rpc/codigos_recuperacion_disponibles",
+                token, "{}", null).trim();
+        try {
+            return Integer.parseInt(valor);
+        } catch (NumberFormatException e) {
+            throw new IOException("Respuesta inesperada al consultar los códigos");
+        }
+    }
+
     // ---------- Eliminación de la cuenta a pedido de la persona ----------
 
     /** Devuelve "ok", "ya_pendiente" o "sin_sesion"; el servidor evita pedidos repetidos. */
