@@ -2,6 +2,12 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// La variante sin google-services.json sigue compilando para revisión local. Al agregar
+// el archivo descargado desde Firebase, Gradle genera las opciones reales de FCM.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // La clave de carga es propiedad del publicador. Nunca se guarda en Git ni se
 // sustituye por la clave de depuración al generar un paquete para Play.
 val uploadStoreFile = providers.environmentVariable("FALTOS_UPLOAD_STORE_FILE").orNull
@@ -87,6 +93,8 @@ dependencies {
     implementation(libs.webkit)
     implementation(libs.core.splashscreen)
     implementation(libs.document.scanner)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     testImplementation(libs.junit)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.ext.junit)

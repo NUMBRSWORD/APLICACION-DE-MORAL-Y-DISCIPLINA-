@@ -19,6 +19,21 @@ public final class SupabaseApi {
     private SupabaseApi() {
     }
 
+    /** El servidor asocia el dispositivo solo a una cuenta aprobada y con MFA verificada. */
+    public static void registrarDispositivoAndroid(String tokenSesion, String tokenFcm)
+            throws IOException, JSONException {
+        JSONObject cuerpo = new JSONObject().put("p_token", tokenFcm);
+        SupabaseAuth.pedir("POST", "/rest/v1/rpc/registrar_dispositivo_android",
+                tokenSesion, cuerpo.toString(), null);
+    }
+
+    public static void quitarDispositivoAndroid(String tokenSesion, String tokenFcm)
+            throws IOException, JSONException {
+        JSONObject cuerpo = new JSONObject().put("p_token", tokenFcm);
+        SupabaseAuth.pedir("POST", "/rest/v1/rpc/quitar_dispositivo_android",
+                tokenSesion, cuerpo.toString(), null);
+    }
+
     /** El servidor es quien determina si una cuenta tiene un cambio de clave pendiente. */
     public static boolean necesitaCambiarClave(String token) throws IOException {
         String valor = SupabaseAuth.pedir("POST", "/rest/v1/rpc/necesita_cambiar_clave", token, "{}", null).trim();
@@ -181,6 +196,14 @@ public final class SupabaseApi {
         return new JSONObject()
                 .put("id", r.getString("id"))
                 .put("secreto", r.getJSONObject("totp").getString("secret"));
+    }
+
+    /**
+     * Retira un token del servidor. Solo funciona con una sesión ya verificada (aal2), por
+     * eso se usa al migrar de teléfono: se activa el token nuevo y se retira el anterior.
+     */
+    public static void eliminarFactor(String token, String factorId) throws IOException {
+        SupabaseAuth.pedir("DELETE", "/auth/v1/factors/" + Uri.encode(factorId), token, null, null);
     }
 
     public static String desafiar(String token, String factorId) throws IOException, JSONException {

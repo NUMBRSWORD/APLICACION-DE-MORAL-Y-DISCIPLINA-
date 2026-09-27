@@ -17,3 +17,5 @@ local.properties
 *.p12
 *.pfx
 .private/
+# Configuración local de Firebase (cada instalación puede tener un proyecto distinto).
+/app/google-services.json

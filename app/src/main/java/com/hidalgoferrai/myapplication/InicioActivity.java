@@ -1,29 +1,43 @@
 package com.hidalgoferrai.myapplication;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.widget.GridLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.webkit.CookieManager;
 import android.webkit.WebStorage;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
+
+import com.google.android.material.button.MaterialButton;
 
 import java.util.Calendar;
 
 import org.json.JSONObject;
 
-/** Pantalla de inicio: saludo y cuadrícula de accesos, incluido el Token Digital. */
+/** Inicio breve por perfil. La gestión extensa continúa en la web. */
 public class InicioActivity extends AppCompatActivity {
 
     public static final String EXTRA_SESION = "sesion";
 
     private String sesion;
     private String tokenActual;
+    private final ActivityResultLauncher<String> permisoAvisos = registerForActivityResult(
+            new ActivityResultContracts.RequestPermission(), permitido -> {
+                if (permitido) registrarAvisos();
+                else ((TextView) findViewById(R.id.tvAvisosEstado))
+                        .setText(R.string.avisos_permiso);
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,29 +64,101 @@ public class InicioActivity extends AppCompatActivity {
         ((TextView) findViewById(R.id.tvRol)).setText(Perfil.esAdministrador(this)
                 ? R.string.rol_administrador : R.string.rol_usuario);
 
-        GridLayout grid = findViewById(R.id.grid);
+        LinearLayout grid = findViewById(R.id.grid);
+        boolean administrador = Perfil.esAdministrador(this);
+        ((TextView) findViewById(R.id.tvPanelTitulo)).setText(administrador
+                ? R.string.inicio_admin_titulo : R.string.inicio_usuario_titulo);
+        ((TextView) findViewById(R.id.tvPanelTexto)).setText(administrador
+                ? R.string.inicio_admin_texto : R.string.inicio_usuario_texto);
         findViewById(R.id.btnMiToken).setOnClickListener(v -> {
             if (getSupportFragmentManager().findFragmentByTag("token-inferior") == null)
                 new TokenInferior().show(getSupportFragmentManager(), "token-inferior");
         });
-        agregar(grid, R.string.subir_expediente, R.drawable.ic_expediente, "subir");
-        agregar(grid, R.string.acceso_seguimiento, R.drawable.ic_seguimiento, "pendientes");
-        agregar(grid, R.string.historial_efectivo, R.drawable.ic_personal, "seguimiento");
-        agregar(grid, R.string.acceso_cumplimiento, R.drawable.ic_cumplimiento, "cumplimiento");
-        if (Perfil.esAdministrador(this)) {
-            agregar(grid, R.string.panel_mensual, R.drawable.ic_calendario, "panel");
-            agregar(grid, R.string.acceso_personal, R.drawable.ic_personal, "efectivos");
-            agregar(grid, R.string.recepcion_fisica, R.drawable.ic_recepcion, "recepcion-fisica");
+        if (administrador) {
+            agregar(grid, R.string.inicio_admin_panel, R.string.inicio_admin_panel_detalle,
+                    R.drawable.ic_calendario, "panel");
+            agregar(grid, R.string.inicio_subir_completo, R.string.inicio_subir_completo_detalle,
+                    R.drawable.ic_expediente, "consulta");
+            agregar(grid, R.string.inicio_recepcionar, R.string.inicio_recepcionar_detalle,
+                    R.drawable.ic_recepcion, "recepcion-fisica");
+        } else {
+            agregar(grid, R.string.inicio_usuario_pendientes, R.string.inicio_usuario_pendientes_detalle,
+                    R.drawable.ic_seguimiento, "pendientes");
+            agregar(grid, R.string.inicio_subir_completo, R.string.inicio_usuario_subir_detalle,
+                    R.drawable.ic_expediente, "consulta");
         }
-        agregar(grid, R.string.consulta_expediente, R.drawable.ic_mas, "consulta");
-        if (Perfil.esAdministrador(this))
-            agregar(grid, R.string.herramientas_titulo, R.drawable.ic_documento, "herramientas");
 
         findViewById(R.id.btnSalir).setOnClickListener(v -> cerrarSesion());
+        prepararAvisos();
+        comprobarActualizacion();
         // Vía de baja exigida por Google Play; la equivalente pública está en la web.
         findViewById(R.id.btnEliminarCuenta).setOnClickListener(v -> startActivity(
                 new Intent(this, EliminarCuentaActivity.class)
                         .putExtra(EliminarCuentaActivity.EXTRA_TOKEN, tokenActual)));
+    }
+
+    private void prepararAvisos() {
+        if (!AvisosAndroid.configurado(this)) return;
+        findViewById(R.id.tarjetaAvisos).setVisibility(View.VISIBLE);
+        MaterialButton boton = findViewById(R.id.btnAvisos);
+        boolean habilitado = AvisosAndroid.habilitado(this);
+        boolean permiso = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this,
+                Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        boton.setText(habilitado && permiso ? R.string.avisos_actualizar : R.string.avisos_activar);
+        if (habilitado && permiso) {
+            ((TextView) findViewById(R.id.tvAvisosEstado)).setText(R.string.avisos_activados);
+            registrarAvisos();
+        } else if (habilitado) {
+            ((TextView) findViewById(R.id.tvAvisosEstado)).setText(R.string.avisos_permiso);
+        }
+        boton.setOnClickListener(v -> {
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permisoAvisos.launch(Manifest.permission.POST_NOTIFICATIONS);
+            } else registrarAvisos();
+        });
+    }
+
+    private void registrarAvisos() {
+        MaterialButton boton = findViewById(R.id.btnAvisos);
+        boton.setEnabled(false);
+        ((TextView) findViewById(R.id.tvAvisosEstado)).setText(R.string.avisos_conectando);
+        AvisosAndroid.registrar(this, () -> {
+            if (isFinishing() || isDestroyed()) return;
+            boton.setEnabled(true);
+            boton.setText(R.string.avisos_actualizar);
+            ((TextView) findViewById(R.id.tvAvisosEstado)).setText(R.string.avisos_activados);
+        }, () -> {
+            if (isFinishing() || isDestroyed()) return;
+            boton.setEnabled(true);
+            ((TextView) findViewById(R.id.tvAvisosEstado)).setText(R.string.avisos_error);
+        });
+    }
+
+    /**
+     * La aplicación se reparte por archivo APK, así que nadie se entera de una versión
+     * nueva si no se le avisa aquí. Solo muestra el aviso: descargar e instalar lo decide
+     * la persona. Si no hay conexión, la pantalla queda igual.
+     */
+    private void comprobarActualizacion() {
+        new Thread(() -> {
+            Actualizacion.Nueva nueva = Actualizacion.comprobar(getApplicationContext());
+            if (nueva == null) return;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                ((TextView) findViewById(R.id.tvAvisoActualizacion))
+                        .setText(getString(R.string.actualizacion_aviso, nueva.version));
+                findViewById(R.id.avisoActualizacion).setVisibility(View.VISIBLE);
+                findViewById(R.id.btnActualizar).setOnClickListener(v -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(nueva.url)));
+                    } catch (android.content.ActivityNotFoundException e) {
+                        android.widget.Toast.makeText(this, R.string.web_sin_aplicacion,
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                });
+            });
+        }, "aviso-actualizacion").start();
     }
 
     private String saludo() {
@@ -84,42 +170,18 @@ public class InicioActivity extends AppCompatActivity {
                 : getString(R.string.inicio_saludo_noche);
     }
 
-    /** Cada tarjeta tiene un destino independiente; ninguna vuelve al inicio web. */
-    private void agregar(GridLayout grid, int etiqueta, int icono, String vista) {
+    /** Los destinos visibles son concretos; nunca abren el inicio genérico de la web. */
+    private void agregar(LinearLayout grid, int etiqueta, int detalle, int icono, String vista) {
         View tarjeta = LayoutInflater.from(this).inflate(R.layout.item_acceso, grid, false);
         ((ImageView) tarjeta.findViewById(R.id.icono)).setImageResource(icono);
         ((TextView) tarjeta.findViewById(R.id.etiqueta)).setText(etiqueta);
-        int detalle = R.string.acceso_mas_detalle;
-        if (etiqueta == R.string.acceso_token) detalle = R.string.acceso_token_detalle;
-        else if (etiqueta == R.string.subir_expediente) detalle = R.string.subir_tarjeta_detalle;
-        else if (etiqueta == R.string.acceso_seguimiento) detalle = R.string.acceso_seguimiento_detalle;
-        else if (etiqueta == R.string.acceso_cumplimiento) detalle = R.string.acceso_cumplimiento_detalle;
-        else if (etiqueta == R.string.acceso_personal) detalle = R.string.acceso_personal_detalle;
-        else if (etiqueta == R.string.acceso_recepcion) detalle = R.string.acceso_recepcion_detalle;
-        else if (etiqueta == R.string.modulo_archivo) detalle = R.string.modulo_archivo_detalle;
-        else if (etiqueta == R.string.consulta_expediente) detalle = R.string.consulta_expediente_detalle;
-        else if (etiqueta == R.string.recepcion_fisica) detalle = R.string.recepcion_fisica_detalle;
-        else if (etiqueta == R.string.historial_efectivo) detalle = R.string.historial_efectivo_detalle;
-        else if (etiqueta == R.string.panel_mensual) detalle = R.string.panel_mensual_detalle;
-        else if (etiqueta == R.string.herramientas_titulo) detalle = R.string.herramientas_detalle;
         ((TextView) tarjeta.findViewById(R.id.detalle)).setText(detalle);
-
-        // Las dos tarjetas de una misma fila se estiran a la altura de la más alta: un título
-        // de dos líneas ya no deja una tarjeta corta al lado de una larga, y las flechas quedan
-        // alineadas. La fila se alinea con FILL y sin peso: con peso, dentro de una vista que
-        // se desplaza, no hay espacio sobrante que repartir y las tarjetas quedarían en cero.
-        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-        lp.width = 0;
-        lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
-        lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, 1f);
-        lp.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, GridLayout.FILL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(dp(6), dp(6), dp(6), dp(6));
         tarjeta.setLayoutParams(lp);
 
         tarjeta.setOnClickListener(v -> {
-            if ("subir".equals(vista)) {
-                startActivity(new Intent(this, ExpedienteActivity.class));
-            } else if ("pendientes".equals(vista)) {
+            if ("pendientes".equals(vista)) {
                 startActivity(new Intent(this, SeguimientoActivity.class));
             } else {
                 Intent i = new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_VISTA, vista);
@@ -130,6 +192,7 @@ public class InicioActivity extends AppCompatActivity {
     }
 
     private void cerrarSesion() {
+        AvisosAndroid.cerrarSesion(this, tokenActual);
         SesionActual.borrar();
         Perfil.borrar(this);
         AlmacenSeguro.borrarRefresco(this);

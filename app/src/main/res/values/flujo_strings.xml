@@ -52,10 +52,4 @@
     <string name="token_error_seis">Ingrese los 6 dígitos del código</string>
     <string name="token_carga_detenida">La operación se detuvo.</string>
     <string name="token_error_titulo">No pudimos preparar su token</string>
-    <string name="acceso_token_detalle">Ver su código seguro</string>
-    <string name="acceso_seguimiento_detalle">Solo lo que falta completar</string>
-    <string name="acceso_cumplimiento_detalle">Control de plazos</string>
-    <string name="acceso_personal_detalle">Directorio de personal</string>
-    <string name="acceso_recepcion_detalle">Documentos recibidos</string>
-    <string name="acceso_mas_detalle">Todas las herramientas</string>
 </resources>

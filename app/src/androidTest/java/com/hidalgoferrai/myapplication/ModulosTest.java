@@ -126,12 +126,14 @@ public class ModulosTest {
         }
         return uri;
     }
-    @Test public void inicioAbreCargaPropiaYTokenDesdeAbajo() throws Exception {
+    @Test public void inicioAdministradorMuestraTresAccionesYTokenDesdeAbajo() throws Exception {
+        casoPrueba();
         try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)) {
             esperar(R.id.btnMiToken,null);captura("inicio-modulos.png");
             s.onActivity(a->{
                 View footer=a.findViewById(R.id.btnMiToken);View root=a.findViewById(R.id.main);
                 assertTrue(footer.getTop()>root.getHeight()*0.65);
+                assertEquals(3,((LinearLayout)a.findViewById(R.id.grid)).getChildCount());
             });
             onView(withId(R.id.btnMiToken)).perform(click());
             s.onActivity(a->{
@@ -144,8 +146,22 @@ public class ModulosTest {
             // siguiente toque aunque el fragmento ya esté eliminado.
             Thread.sleep(400);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            onView(withText(R.string.subir_expediente)).perform(scrollTo(),click());
-            esperar(R.id.btnEscanear,null);esperar(R.id.btnSeleccionarPdf,null);captura("subir-modulos.png");
+            onView(withText(R.string.inicio_subir_completo)).perform(scrollTo(),click());
+            esperar(R.id.webView,null);
+            main(()->{
+                for(Activity a:ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED))
+                    if(a instanceof WebActivity)assertEquals("consulta",a.getIntent().getStringExtra(WebActivity.EXTRA_VISTA));
+            });
+        }
+    }
+    @Test public void inicioUsuarioSoloMuestraPendientesYCargaPropia() throws Exception {
+        Perfil.guardar(contexto,"otro-usuario","S1 PNP","Cuenta Demostración","viewer");
+        try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)) {
+            s.onActivity(a->{
+                assertEquals(2,((LinearLayout)a.findViewById(R.id.grid)).getChildCount());
+                assertEquals(a.getString(R.string.inicio_usuario_titulo),
+                        ((TextView)a.findViewById(R.id.tvPanelTitulo)).getText().toString());
+            });
         }
     }
     @Test public void seguimientoSoloPendientesYBusqueda() throws Exception {

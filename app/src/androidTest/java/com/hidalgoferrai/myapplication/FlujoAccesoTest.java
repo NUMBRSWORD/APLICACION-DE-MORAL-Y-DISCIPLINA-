@@ -43,6 +43,7 @@ public class FlujoAccesoTest {
     private volatile boolean clavePendiente, falloClave;
     private volatile boolean eliminacionPendiente, falloEliminacion;
     private volatile boolean codigosEntregados;
+    private volatile String factorEliminado;
     private volatile String factores = "[]";
     private static final String UID = "usuario-prueba-aislada";
     private static final String SESION = "{\"access_token\":\"sesion-ficticia\",\"refresh_token\":\"refresco-ficticio\",\"user\":{\"id\":\"usuario-prueba-aislada\",\"email\":\"prueba@example.invalid\"}}";
@@ -68,6 +69,7 @@ public class FlujoAccesoTest {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
         SupabaseAuth.transporte = original;
         WebActivity.htmlPrueba=null; WebActivity.moduloPrueba=null;
+        Actualizacion.respuestaPrueba = null;
         SesionActual.borrar();
     }
 
@@ -82,6 +84,10 @@ public class FlujoAccesoTest {
         if (ruta.equals("/auth/v1/factors") && metodo.equals("POST")) {
             altas.incrementAndGet();
             return "{\"id\":\"factor-prueba\",\"totp\":{\"secret\":\"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\"}}";
+        }
+        if (metodo.equals("DELETE") && ruta.startsWith("/auth/v1/factors/")) {
+            factorEliminado = ruta.substring(ruta.lastIndexOf('/') + 1);
+            return "";
         }
         if (ruta.endsWith("/challenge")) return "{\"id\":\"desafio-prueba\"}";
         if (ruta.endsWith("/verify")) {
@@ -372,6 +378,56 @@ public class FlujoAccesoTest {
             onView(withId(R.id.cbGuardados)).perform(scrollTo(), click());
             onView(withId(R.id.btnContinuar)).perform(scrollTo(), click());
             esperarTexto(R.id.tvEstadoToken, "PROTECCIÓN ACTIVA");
+        }
+    }
+
+    /** Migrar con el teléfono viejo a mano: se activa aquí y el anterior deja de servir. */
+    @Test public void migrarDeTelefonoActivaElTokenAquiYRetiraElAnterior() throws Exception {
+        factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
+            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
+            onView(withText(R.string.migrar_activar)).inRoot(isDialog()).perform(click());
+            esperarTexto(R.id.tvCodigos, "ABCDE-FGHIJ");
+            assertEquals("Se inscribe un token propio", 1, altas.get());
+            assertEquals("Se retira el token del teléfono anterior", "factor-de-otro", factorEliminado);
+        }
+    }
+
+    /** Quien prefiere no migrar entra igual y no se le toca el token del otro teléfono. */
+    @Test public void migrarSePuedePosponerSinPerderElAcceso() throws Exception {
+        factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
+        Perfil.guardar(contexto, UID, "S1 PNP", "Cuenta Demostración", "admin");
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
+            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
+            onView(withText(R.string.migrar_ahora_no)).inRoot(isDialog()).perform(click());
+            esperarTexto(R.id.tvNombre, "Cuenta");
+            assertEquals(0, altas.get());
+            assertNull(factorEliminado);
+        }
+    }
+
+    /** Al repartirse por APK, el inicio avisa cuando hay una versión más nueva publicada. */
+    @Test public void avisaCuandoHayVersionNuevaYCallaCuandoNoLaHay() throws Exception {
+        Perfil.guardar(contexto, UID, "S1 PNP", "Cuenta Demostración", "admin");
+        Actualizacion.respuestaPrueba = "{\"versionCode\":99999,\"versionName\":\"9.9\","
+                + "\"url\":\"https://numbrsword.github.io/moral-y-disciplina/descargar.html\"}";
+        Intent inicio = new Intent(contexto, InicioActivity.class)
+                .putExtra(InicioActivity.EXTRA_SESION, SESION);
+        try (ActivityScenario<InicioActivity> escenario = ActivityScenario.launch(inicio)) {
+            esperarTexto(R.id.tvAvisoActualizacion, "9.9");
+        }
+        // Con una versión igual o anterior a la instalada no se muestra nada.
+        Actualizacion.respuestaPrueba = "{\"versionCode\":1,\"versionName\":\"1.0\","
+                + "\"url\":\"https://numbrsword.github.io/moral-y-disciplina/descargar.html\"}";
+        try (ActivityScenario<InicioActivity> escenario = ActivityScenario.launch(inicio)) {
+            esperarTexto(R.id.tvNombre, "Cuenta");
+            Thread.sleep(1500);
+            escenario.onActivity(a -> assertEquals(View.GONE,
+                    a.findViewById(R.id.avisoActualizacion).getVisibility()));
         }
     }
 

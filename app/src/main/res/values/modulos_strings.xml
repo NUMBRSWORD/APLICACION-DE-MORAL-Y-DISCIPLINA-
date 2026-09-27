@@ -1,10 +1,7 @@
 <resources>
     <string name="historial_efectivo">Historial por efectivo</string>
-    <string name="historial_efectivo_detalle">Faltas, tiempos y sanciones</string>
     <string name="panel_mensual">Panel mensual</string>
-    <string name="panel_mensual_detalle">Acumulados y resumen del mes</string>
     <string name="herramientas_titulo">Más herramientas</string>
-    <string name="herramientas_detalle">Carga grupal, agenda y documentos</string>
     <string name="modulo_reincorporacion">Reincorporación grupal</string>
     <string name="modulo_continuan">Continúan faltos</string>
     <string name="modulo_roles">Roles de servicio</string>
@@ -15,7 +12,6 @@
     <string name="modulo_seguridad">Actualizar seguridad de la cuenta</string>
     <string name="modulo_seguridad_error">No se pudo comprobar si su cuenta requiere actualizar la clave. Reintente; no se abrirán los datos mientras esta comprobación esté pendiente.</string>
     <string name="subir_expediente">Subir expediente</string>
-    <string name="subir_tarjeta_detalle">Escanear o elegir PDF</string>
     <string name="subir_descripcion">Escanee las páginas o seleccione un PDF. Después podrá revisar los datos antes de registrarlo.</string>
     <string name="escanear_documento">Escanear documento</string>
     <string name="escanear_descripcion">Cámara, recorte y varias páginas en un PDF.</string>
@@ -48,16 +44,12 @@
     <string name="pendiente_orden">Completar evaluación y orden</string>
     <string name="pendiente_notificar">Subir el expediente completo firmado</string>
     <string name="consulta_expediente">Consulta de expediente</string>
-    <string name="consulta_expediente_detalle">Estado y fecha de recepción</string>
     <string name="recepcion_fisica">Recepción física</string>
-    <string name="recepcion_fisica_detalle">Verificar y confirmar recepción</string>
     <string name="modulo_cargando">Abriendo %1$s…</string>
     <string name="modulo_error">No pudimos abrir esta sección</string>
     <string name="modulo_actualizar_webview">Actualice Android System WebView y Chrome desde Google Play para abrir esta sección de forma segura.</string>
     <string name="modulo_no_disponible">Esta sección no está disponible para su perfil o la web no respondió. Reintente o vuelva al inicio.</string>
     <string name="modulo_volver">Volver</string>
-    <string name="modulo_archivo">Expedientes concluidos</string>
-    <string name="modulo_archivo_detalle">Consultar el archivo</string>
     <string name="modulo_registro">Registro de expediente</string>
     <string name="modulo_detalle">Completar expediente</string>
     <string name="token_inferior">Token Digital</string>

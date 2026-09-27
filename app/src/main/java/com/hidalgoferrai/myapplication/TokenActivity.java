@@ -33,6 +33,8 @@ public class TokenActivity extends AppCompatActivity {
     private TextInputLayout layoutCodigo;
     private TextInputEditText etCodigo;
     private String token, usuarioId, sesion, secreto, factorId;
+    /** Token del teléfono anterior: se retira cuando el nuevo ya quedó activado. */
+    private String factorAnterior;
     private boolean modoIngreso, externo, ocupado, listo, sesionVerificada;
     private Runnable reintento;
     private final androidx.activity.result.ActivityResultLauncher<Intent> codigosRespaldo =
@@ -190,6 +192,12 @@ public class TokenActivity extends AppCompatActivity {
                 AlmacenSeguro.guardarTokenPendiente(this, usuarioId, factorId, secreto);
                 verificarEnServidor(Totp.codigo(secreto));
                 AlmacenSeguro.marcarTokenVerificado(this, usuarioId);
+                if (factorAnterior != null) {
+                    // Ya hay token nuevo activo: el del teléfono anterior deja de servir.
+                    try { SupabaseApi.eliminarFactor(token, factorAnterior); }
+                    catch (java.io.IOException e) { /* Queda el token viejo; no impide entrar aquí. */ }
+                    factorAnterior = null;
+                }
                 // Al activar se entregan los códigos de respaldo: son la única salida propia
                 // si después se pierde el teléfono.
                 publicar(() -> {
@@ -252,6 +260,30 @@ public class TokenActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Migración a un teléfono nuevo teniendo a mano el anterior: tras entrar con el código
+     * del viejo, se ofrece activar el token aquí. Sin esto, el teléfono nuevo seguiría
+     * pidiendo el código del anterior en cada ingreso.
+     */
+    private void ofrecerMigracion() {
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.migrar_titulo)
+                .setMessage(R.string.migrar_mensaje)
+                .setNegativeButton(R.string.migrar_ahora_no, (d, b) -> {
+                    if (modoIngreso) irAlInicio(); else finish();
+                })
+                .setPositiveButton(R.string.migrar_activar, (d, b) -> {
+                    factorAnterior = factorId;
+                    factorId = null;
+                    secreto = null;
+                    externo = false;
+                    layoutCodigo.setVisibility(View.GONE);
+                    activar();
+                })
+                .setCancelable(false)
+                .show();
+    }
+
     private void verificar() {
         if (sesionVerificada && modoIngreso) { irAlInicio(); return; }
         String codigoExterno = etCodigo.getText() == null ? "" : etCodigo.getText().toString().trim();
@@ -267,10 +299,11 @@ public class TokenActivity extends AppCompatActivity {
                 verificarEnServidor(externo ? codigoExterno : Totp.codigo(secreto));
                 publicar(() -> {
                     ocupado = false;
-                    if (modoIngreso) {
+                    if (externo) {
+                        ofrecerMigracion();
+                    } else if (modoIngreso) {
                         irAlInicio();
-                    } else if (externo) finish();
-                    else mostrarListo();
+                    } else mostrarListo();
                 });
             } catch (Exception e) { publicar(() -> mostrarError(e, this::verificar)); }
         });

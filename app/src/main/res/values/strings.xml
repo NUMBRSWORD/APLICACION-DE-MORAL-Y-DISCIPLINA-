@@ -90,7 +90,6 @@
     <string name="inicio_saludo_tarde">Buenas tardes,</string>
     <string name="inicio_saludo_noche">Buenas noches,</string>
     <string name="inicio_salir">Cerrar sesión</string>
-    <string name="acceso_token">Token Digital</string>
     <string name="acceso_seguimiento">Seguimiento</string>
     <string name="acceso_cumplimiento">Cumplimiento</string>
     <string name="acceso_personal">Efectivos</string>
@@ -111,8 +110,19 @@
     <string name="inicio_nombre_formato">%1$s %2$s</string>
     <string name="inicio_panel_titulo">Panel de trabajo</string>
     <string name="inicio_panel_texto">Acceda rápidamente a las funciones habilitadas para su perfil.</string>
-    <string name="inicio_seguridad_titulo">Sesión protegida con Token Digital</string>
-    <string name="inicio_seguridad_texto">Nunca comparta su código de seis dígitos con otra persona.</string>
+    <string name="inicio_admin_titulo">Centro de control</string>
+    <string name="inicio_admin_texto">Tres acciones principales para atender los expedientes del día.</string>
+    <string name="inicio_usuario_titulo">Sus expedientes</string>
+    <string name="inicio_usuario_texto">Revise lo pendiente y cargue el expediente completo cuando corresponda.</string>
+    <string name="inicio_admin_panel">Panel de control</string>
+    <string name="inicio_admin_panel_detalle">Resumen y pendientes del mes</string>
+    <string name="inicio_subir_completo">Subir expediente completo</string>
+    <string name="inicio_subir_completo_detalle">Elija el caso y adjunte el PDF firmado</string>
+    <string name="inicio_recepcionar">Recepcionar documentos</string>
+    <string name="inicio_recepcionar_detalle">Verifique el físico antes de confirmar</string>
+    <string name="inicio_usuario_pendientes">Pasos pendientes</string>
+    <string name="inicio_usuario_pendientes_detalle">Vea lo completado y lo que falta</string>
+    <string name="inicio_usuario_subir_detalle">Consulte su caso y cargue el PDF firmado</string>
     <string name="app_institucion">HERRAMIENTA INDEPENDIENTE · NO OFICIAL</string>
 
     <string name="eliminar_titulo">Eliminar mi cuenta</string>
@@ -134,6 +144,24 @@
     <string name="eliminar_web">También puede solicitarla sin instalar la aplicación en:\nnumbrsword.github.io/moral-y-disciplina/eliminar-cuenta.html</string>
     <string name="inicio_eliminar_cuenta">Eliminar mi cuenta</string>
 
+    <string name="actualizacion_aviso">Versión %1$s disponible</string>
+    <string name="actualizacion_detalle">Se instala desde la página de descarga.</string>
+    <string name="actualizacion_boton">Ver</string>
+
+    <string name="avisos_activar">Activar</string>
+    <string name="avisos_actualizar">Actualizar</string>
+    <string name="avisos_activar_detalle">Active avisos de nuevos casos y pasos pendientes.</string>
+    <string name="avisos_activados">Avisos activados en este teléfono.</string>
+    <string name="avisos_conectando">Conectando avisos…</string>
+    <string name="avisos_error">No se pudieron activar. Revise su conexión e inténtelo de nuevo.</string>
+    <string name="avisos_permiso">Permita las notificaciones en los ajustes del teléfono para recibir avisos.</string>
+    <string name="avisos_canal">Casos y plazos</string>
+    <string name="avisos_canal_detalle">Avisos generales de expedientes y pasos pendientes.</string>
+    <string name="aviso_caso_nuevo">Tiene un caso nuevo. Ingrese para revisarlo.</string>
+    <string name="aviso_plazo_descargo">Revise el plazo de descargo de su caso.</string>
+    <string name="aviso_pasos_pendientes">Tiene pasos pendientes en un expediente.</string>
+    <string name="aviso_documento_recibido">Se registró la recepción de un documento. Consulte el expediente.</string>
+
     <string name="recuperacion_titulo">Códigos de recuperación</string>
     <string name="recuperacion_paso">GUÁRDELOS ANTES DE CONTINUAR</string>
     <string name="recuperacion_subtitulo">Si pierde este teléfono, estos códigos son su única forma de volver a activar el Token Digital sin depender de nadie.</string>
@@ -147,6 +175,11 @@
     <string name="recuperacion_nuevos">Generar códigos de recuperación</string>
     <string name="recuperacion_reemplaza">Se crearán ocho códigos nuevos y los anteriores dejarán de servir. Úselo si nunca los guardó o si cree que alguien más los vio.</string>
     <string name="recuperacion_generar">Generar</string>
+
+    <string name="migrar_titulo">¿Es este su teléfono nuevo?</string>
+    <string name="migrar_mensaje">Puede activar el Token Digital en este teléfono. Se le entregarán códigos de recuperación nuevos y el token del teléfono anterior dejará de servir. Si no lo activa aquí, cada vez que entre tendrá que pedirle el código al otro teléfono.</string>
+    <string name="migrar_activar">Activarlo en este teléfono</string>
+    <string name="migrar_ahora_no">Ahora no</string>
 
     <string name="recuperar_entrada">Perdí el teléfono de mi token</string>
     <string name="recuperar_titulo">Recuperar el Token Digital</string>
