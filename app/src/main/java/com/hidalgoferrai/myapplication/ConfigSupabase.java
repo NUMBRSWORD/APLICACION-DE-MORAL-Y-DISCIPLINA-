@@ -20,7 +20,7 @@ public final class ConfigSupabase {
     }
 
     // Sube el número cuando cambien los términos o la política de datos: se vuelve a pedir la aceptación.
-    public static final String VERSION_TERMINOS = "2";
+    public static final String VERSION_TERMINOS = "3";
 
     // Clave con la que supabase-js guarda la sesión en la aplicación web.
     public static final String CLAVE_SESION_WEB = "sb-tndjulaitywtoocqeeiy-auth-token";
