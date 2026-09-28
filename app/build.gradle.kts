@@ -37,8 +37,8 @@ android {
         applicationId = "com.hidalgoferrai.faltos"
         minSdk = 24
         targetSdk = 37
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
         // Un solo sitio define el esquema de vuelta del acceso: el filtro del manifiesto y el
         // que comprueba LoginActivity salen de aquí, así nunca se separan.
         esquemaDeAcceso("faltas")
