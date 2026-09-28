@@ -138,6 +138,53 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(URL_SUPABASE, SERVICIO);
     const hoy = hoyLima();
 
+    // Comprobación: solo verifica que la credencial de Google sirve. No envía nada.
+    // Existe porque el envío pide la credencial únicamente cuando hay algo que mandar,
+    // y hace falta poder validar la puesta en marcha sin molestar a ningún teléfono.
+    let cuerpoPeticion: Record<string, unknown> = {};
+    try { cuerpoPeticion = await req.json(); } catch { /* Sin cuerpo: envío normal. */ }
+    if (cuerpoPeticion?.comprobar === true) {
+      const token = await tokenDeAcceso(cuenta);
+      const { count } = await admin.from("dispositivos_android")
+        .select("token", { count: "exact", head: true });
+      return json({
+        credencial: token ? "ok" : "sin token",
+        proyectoFcm: cuenta.project_id,
+        dispositivosRegistrados: count ?? 0,
+        enviado: false,
+      });
+    }
+
+    // Prueba de entrega: manda un aviso al ÚLTIMO teléfono registrado y a ninguno más.
+    // Así se comprueba la cadena completa sin molestar al resto y sin tocar el registro
+    // de avisos enviados, que es lo que decide los envíos de verdad.
+    if (cuerpoPeticion?.probarEnvio === true) {
+      const { data: ultimo } = await admin.from("dispositivos_android")
+        .select("token, user_id").order("actualizado_at", { ascending: false })
+        .limit(1).maybeSingle();
+      if (!ultimo) return json({ error: "Todavía no hay ningún teléfono registrado." }, 409);
+      const acceso = await tokenDeAcceso(cuenta);
+      const respuesta = await fetch(
+        `https://fcm.googleapis.com/v1/projects/${cuenta.project_id}/messages:send`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${acceso}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: {
+              token: String(ultimo.token),
+              data: { user_id: String(ultimo.user_id), tipo: "caso_nuevo" },
+              android: { priority: "HIGH" },
+            },
+          }),
+        },
+      );
+      return json({
+        prueba: respuesta.ok ? "enviado" : "rechazado por FCM",
+        estado: respuesta.status,
+        soloAlUltimoTelefonoRegistrado: true,
+      });
+    }
+
     const { data: notas, error: errorNotas } = await admin
       .from("notas_informativas")
       .select("id, oficial_constato_cip, created_at, fecha_reincorporacion, imputacion_generada_at,"
