@@ -29,6 +29,7 @@ public class SeguimientoActivity extends AppCompatActivity {
     private final ExecutorService hilo=Executors.newSingleThreadExecutor();
     private final ArrayList<JSONObject> notas=new ArrayList<>();
     private boolean cargando;
+    private boolean cargaCorrecta;
     private int offset;
     private LinearLayout lista;
     private TextInputEditText buscar;
@@ -53,6 +54,7 @@ public class SeguimientoActivity extends AppCompatActivity {
     @Override protected void onResume(){super.onResume();cargar(false);}
     private void cargar(boolean mas) {
         if(cargando)return;cargando=true;
+        if (!mas) { cargaCorrecta = false; notas.clear(); pintar(); }
         findViewById(R.id.progreso).setVisibility(View.VISIBLE);
         findViewById(R.id.estadoPanel).setVisibility(View.GONE);
         findViewById(R.id.tvPendientesVacio).setVisibility(View.GONE);
@@ -63,20 +65,24 @@ public class SeguimientoActivity extends AppCompatActivity {
                 String token=new JSONObject(SesionActual.obtener(this)).getString("access_token");
                 JSONArray filas=SupabaseApi.pendientes(token,desde);
                 runOnUiThread(()->{
-                    if(isDestroyed())return;
+                    if(isFinishing() || isDestroyed())return;
                     if(!mas)notas.clear();
                     for(int j=0;j<filas.length();j++) {
                         JSONObject n=filas.optJSONObject(j);
-                        if(n!=null&&ExpedientePendiente.pendiente(n))notas.add(n);
+                        if(n!=null&&ExpedientePendiente.pendiente(n)) {
+                            boolean repetida = false;
+                            for (JSONObject previa : notas) if (previa.optString("id").equals(n.optString("id"))) { repetida = true; break; }
+                            if (!repetida) notas.add(n);
+                        }
                     }
-                    offset=desde+filas.length(); cargando=false;
+                    offset=desde+filas.length(); cargando=false; cargaCorrecta=true;
                     findViewById(R.id.progreso).setVisibility(View.GONE);
                     findViewById(R.id.btnMasPendientes).setEnabled(true);
                     findViewById(R.id.btnMasPendientes).setVisibility(filas.length()==100?View.VISIBLE:View.GONE);
                     pintar();
                 });
             }catch(Exception e){runOnUiThread(()->{
-                if(isDestroyed())return;cargando=false;
+                if(isFinishing() || isDestroyed())return;cargando=false;
                 findViewById(R.id.progreso).setVisibility(View.GONE);
                 Diseno.error(this,R.string.modulo_error,Errores.mensaje(e),true);
             });}
@@ -105,7 +111,7 @@ public class SeguimientoActivity extends AppCompatActivity {
             caja.addView(abrir);tarjeta.addView(caja);lista.addView(tarjeta);
         }
         TextView vacio=findViewById(R.id.tvPendientesVacio);
-        vacio.setVisibility(!cargando&&visibles==0?View.VISIBLE:View.GONE);
+        vacio.setVisibility(cargaCorrecta&&!cargando&&visibles==0?View.VISIBLE:View.GONE);
         vacio.setText(q.isEmpty()?R.string.seguimiento_vacio:R.string.seguimiento_sin_coincidencias);
     }
     private void pintarPasos(LinearLayout caja, JSONObject nota) {

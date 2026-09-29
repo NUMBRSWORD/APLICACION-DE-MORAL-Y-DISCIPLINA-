@@ -16,7 +16,16 @@
       timeZone:'America/Lima', day:'2-digit', month:'long', year:'numeric'
     }).format(parsed);
   };
-  const today = () => new Intl.DateTimeFormat('en-CA', {timeZone:'America/Lima', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
+  const dateISO = value => {
+    if (!value) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Lima', year:'numeric', month:'2-digit', day:'2-digit'}).formatToParts(parsed);
+    const part = type => parts.find(p => p.type === type).value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  };
+  const today = () => dateISO(new Date().toISOString());
   async function request(query) {
     let timer;
     try {
@@ -98,7 +107,7 @@
     }
     const panel = document.createElement('details'); panel.className = 'native-verification';
     panel.innerHTML = `<summary>Presentar apelación (opcional)</summary><form>
-      <label>Fecha de notificación de la sanción<input name="fecha" type="date" required max="${esc(today())}" value="${esc((n.orden_notificada_at || '').slice(0,10))}" ${n.orden_notificada_at ? 'readonly' : ''}></label>
+      <label>Fecha de notificación de la sanción<input name="fecha" type="date" required max="${esc(today())}" value="${esc(dateISO(n.orden_notificada_at))}" ${n.orden_notificada_at ? 'readonly' : ''}></label>
       <p class="muted small">${n.orden_notificada_at ? 'Fecha ya registrada en la orden.' : 'Ingrese la fecha que consta en el cargo de notificación; no la fecha de elaboración de la orden.'}</p>
       <label>Recurso de apelación firmado (PDF, hasta 20 MB)<input name="archivo" type="file" accept="application/pdf" required></label>
       <label class="native-check"><input name="conforme" type="checkbox" required> Confirmo que el sancionado desea apelar y que adjunto su recurso firmado.</label>

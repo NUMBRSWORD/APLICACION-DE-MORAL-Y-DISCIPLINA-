@@ -45,6 +45,7 @@ public class SolicitudActivity extends AppCompatActivity {
     private TextInputLayout primerError;
 
     private String token, usuarioId, email;
+    private boolean ocupado;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,6 +96,7 @@ public class SolicitudActivity extends AppCompatActivity {
     }
 
     private void enviar() {
+        if (ocupado) return;
         if (!validar()) {
             if (primerError != null && primerError.getEditText() != null) {
                 primerError.getEditText().requestFocus();
@@ -110,18 +112,20 @@ public class SolicitudActivity extends AppCompatActivity {
         String telefono = texto(etTelefono).trim();
         hilo.execute(() -> {
             try {
+                token = SesionActual.token(this, usuarioId);
                 SupabaseAuth.enviarSolicitud(token, usuarioId, email, grado, apellidos, nombres,
                         cip, dni, telefono);
                 runOnUiThread(() -> {
-                    startActivity(new Intent(this, PendienteActivity.class));
+                    if (isFinishing() || isDestroyed()) return;
+                    startActivity(new Intent(this, PendienteActivity.class)
+                            .putExtra(PendienteActivity.EXTRA_TOKEN, token));
                     finish();
                 });
             } catch (IOException | JSONException e) {
-                String detalle = String.valueOf(e.getMessage());
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     cargando(false);
-                    Toast.makeText(this, getString(R.string.error_solicitud_envio,
-                            detalle.substring(0, Math.min(detalle.length(), 120))),
+                    Toast.makeText(this, Errores.mensaje(e),
                             Toast.LENGTH_LONG).show();
                 });
             }
@@ -161,6 +165,7 @@ public class SolicitudActivity extends AppCompatActivity {
     }
 
     private void cargando(boolean activo) {
+        ocupado = activo;
         progreso.setVisibility(activo ? View.VISIBLE : View.GONE);
         btnEnviar.setEnabled(!activo);
     }

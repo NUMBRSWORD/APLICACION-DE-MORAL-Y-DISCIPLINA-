@@ -65,6 +65,7 @@ public class TokenActivity extends AppCompatActivity {
         token = getIntent().getStringExtra(EXTRA_TOKEN);
         usuarioId = getIntent().getStringExtra(EXTRA_USUARIO_ID);
         sesion = getIntent().getStringExtra(EXTRA_SESION);
+        SesionActual.restaurar(this, sesion);
         if (usuarioId == null) usuarioId = Perfil.usuarioId(this);
         if (usuarioId == null) { finish(); return; }
         modoIngreso = token != null && sesion != null;
@@ -95,8 +96,7 @@ public class TokenActivity extends AppCompatActivity {
         volver.setText(modoIngreso ? R.string.token_volver_politicas : R.string.volver_inicio);
         volver.setOnClickListener(v -> finish());
         findViewById(R.id.btnAccederDeNuevo).setOnClickListener(v -> {
-            SesionActual.borrar();
-            AlmacenSeguro.borrarRefresco(this);
+            SesionActual.cerrarLocal(this);
             startActivity(new Intent(this, LoginActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK));
             finish();
@@ -134,11 +134,7 @@ public class TokenActivity extends AppCompatActivity {
         trabajando(R.string.token_comprobando);
         hilo.execute(() -> {
             try {
-                if (token == null) {
-                    String refresco = AlmacenSeguro.refresco(this);
-                    if (refresco == null) throw new SupabaseAuth.ErrorApi(401, "{}");
-                    actualizarSesion(SupabaseAuth.renovarSesion(refresco));
-                }
+                renovarSesion();
                 JSONArray factores = SupabaseApi.factores(token);
                 String legacy = AlmacenSeguro.factorLegacy(this);
                 String verificadoAjeno = null;
@@ -182,6 +178,7 @@ public class TokenActivity extends AppCompatActivity {
         trabajando(R.string.token_activando);
         hilo.execute(() -> {
             try {
+                renovarSesion();
                 if (factorId == null || secreto == null) {
                     JSONObject creado = SupabaseApi.crearToken(token,
                             "Faltos · " + UUID.randomUUID().toString().substring(0, 8));
@@ -195,7 +192,11 @@ public class TokenActivity extends AppCompatActivity {
                 if (factorAnterior != null) {
                     // Ya hay token nuevo activo: el del teléfono anterior deja de servir.
                     try { SupabaseApi.eliminarFactor(token, factorAnterior); }
-                    catch (java.io.IOException e) { /* Queda el token viejo; no impide entrar aquí. */ }
+                    catch (java.io.IOException e) {
+                        publicar(() -> new androidx.appcompat.app.AlertDialog.Builder(this)
+                                .setMessage(R.string.token_anterior_pendiente)
+                                .setPositiveButton(android.R.string.ok, null).show());
+                    }
                     factorAnterior = null;
                 }
                 // Al activar se entregan los códigos de respaldo: son la única salida propia
@@ -234,6 +235,7 @@ public class TokenActivity extends AppCompatActivity {
         trabajando(R.string.recuperar_comprobando);
         hilo.execute(() -> {
             try {
+                renovarSesion();
                 String estado = SupabaseApi.usarCodigoRecuperacion(token, codigo);
                 if (!"ok".equals(estado)) {
                     publicar(() -> {
@@ -310,6 +312,7 @@ public class TokenActivity extends AppCompatActivity {
     }
 
     private void verificarEnServidor(String codigo) throws Exception {
+        renovarSesion();
         String desafio = SupabaseApi.desafiar(token, factorId);
         actualizarSesion(SupabaseApi.verificar(token, factorId, desafio, codigo));
         sesionVerificada = true;
@@ -326,7 +329,11 @@ public class TokenActivity extends AppCompatActivity {
         token = nueva.getString("access_token");
         sesion = nueva.toString();
         SesionActual.recibir(this, sesion);
-        AlmacenSeguro.guardarRefresco(this, nueva.optString("refresh_token", null));
+    }
+
+    private void renovarSesion() throws Exception {
+        token = SesionActual.token(this, usuarioId);
+        sesion = SesionActual.obtener(this);
     }
 
     private void trabajando(int mensaje) {

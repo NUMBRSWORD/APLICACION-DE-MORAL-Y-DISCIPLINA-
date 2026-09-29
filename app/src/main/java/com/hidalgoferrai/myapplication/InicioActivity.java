@@ -44,7 +44,7 @@ public class InicioActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         sesion = getIntent().getStringExtra(EXTRA_SESION);
         if (sesion != null) {
-            SesionActual.recibir(this, sesion);
+            SesionActual.restaurar(this, sesion);
             try {
                 tokenActual = new JSONObject(sesion).optString("access_token", null);
             } catch (Exception ignored) {
@@ -102,8 +102,7 @@ public class InicioActivity extends AppCompatActivity {
         findViewById(R.id.tarjetaAvisos).setVisibility(View.VISIBLE);
         MaterialButton boton = findViewById(R.id.btnAvisos);
         boolean habilitado = AvisosAndroid.habilitado(this);
-        boolean permiso = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this,
-                Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        boolean permiso = AvisosAndroid.permitidos(this);
         boton.setText(habilitado && permiso ? R.string.avisos_actualizar : R.string.avisos_activar);
         if (habilitado && permiso) {
             ((TextView) findViewById(R.id.tvAvisosEstado)).setText(R.string.avisos_activados);
@@ -114,12 +113,30 @@ public class InicioActivity extends AppCompatActivity {
         boton.setOnClickListener(v -> {
             if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
                     Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                permisoAvisos.launch(Manifest.permission.POST_NOTIFICATIONS);
+                if (getPreferences(MODE_PRIVATE).getBoolean("pidio_avisos", false)
+                        && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                    abrirAjustesAvisos();
+                } else {
+                    getPreferences(MODE_PRIVATE).edit().putBoolean("pidio_avisos", true).apply();
+                    permisoAvisos.launch(Manifest.permission.POST_NOTIFICATIONS);
+                }
+            } else if (!AvisosAndroid.permitidos(this)) {
+                abrirAjustesAvisos();
             } else registrarAvisos();
         });
     }
 
+    private void abrirAjustesAvisos() {
+        Intent ajustes = Build.VERSION.SDK_INT >= 26
+                ? new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName())
+                : new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + getPackageName()));
+        startActivity(ajustes);
+    }
+
     private void registrarAvisos() {
+        if (!AvisosAndroid.permitidos(this)) { abrirAjustesAvisos(); return; }
         MaterialButton boton = findViewById(R.id.btnAvisos);
         boton.setEnabled(false);
         ((TextView) findViewById(R.id.tvAvisosEstado)).setText(R.string.avisos_conectando);
@@ -192,23 +209,7 @@ public class InicioActivity extends AppCompatActivity {
     }
 
     private void cerrarSesion() {
-        AvisosAndroid.cerrarSesion(this, tokenActual);
-        SesionActual.borrar();
-        Perfil.borrar(this);
-        AlmacenSeguro.borrarRefresco(this);
-        WebStorage.getInstance().deleteAllData();
-        CookieManager.getInstance().removeAllCookies(null);
-        CookieManager.getInstance().flush();
-        if (tokenActual != null) {
-            String tokenParaCerrar = tokenActual;
-            new Thread(() -> {
-                try {
-                    SupabaseAuth.cerrarSesion(tokenParaCerrar);
-                } catch (Exception ignored) {
-                    // La sesión local ya quedó cerrada aunque el servidor no responda.
-                }
-            }, "cerrar-sesion").start();
-        }
+        SesionActual.cerrarLocal(this);
         startActivity(new Intent(this, LoginActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK));
         finish();

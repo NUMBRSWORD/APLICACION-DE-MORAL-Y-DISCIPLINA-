@@ -32,8 +32,7 @@ public class PendienteActivity extends AppCompatActivity {
                         .putExtra(EliminarCuentaActivity.EXTRA_TOKEN,
                                 getIntent().getStringExtra(EXTRA_TOKEN))));
         findViewById(R.id.btnVolver).setOnClickListener(v -> {
-            AlmacenSeguro.borrarRefresco(this);
-            Perfil.borrar(this);
+            SesionActual.cerrarLocal(this);
             startActivity(new Intent(this, LoginActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK));
             finish();

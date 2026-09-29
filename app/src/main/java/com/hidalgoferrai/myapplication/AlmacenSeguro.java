@@ -196,7 +196,7 @@ public final class AlmacenSeguro {
         return new String(cifrador.doFinal(datos), "UTF-8");
     }
 
-    private static SecretKey clave() throws GeneralSecurityException, java.io.IOException {
+    private static synchronized SecretKey clave() throws GeneralSecurityException, java.io.IOException {
         KeyStore almacen = KeyStore.getInstance("AndroidKeyStore");
         almacen.load(null);
         KeyStore.Entry entrada = almacen.getEntry(ALIAS, null);

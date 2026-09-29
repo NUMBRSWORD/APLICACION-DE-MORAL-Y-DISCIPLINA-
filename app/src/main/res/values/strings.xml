@@ -59,7 +59,6 @@
     <string name="error_solicitud_cip">El CIP debe tener entre 4 y 12 dígitos</string>
     <string name="error_solicitud_dni">El DNI debe tener 8 dígitos</string>
     <string name="error_solicitud_telefono">El teléfono debe tener 9 dígitos</string>
-    <string name="error_solicitud_envio">No se pudo enviar la solicitud (%1$s)</string>
 
     <string name="firma_titulo">Firma de políticas</string>
     <string name="firma_paso">CONFIRMACIÓN DE LECTURA</string>

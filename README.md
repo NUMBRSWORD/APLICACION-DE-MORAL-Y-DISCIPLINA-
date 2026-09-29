@@ -23,7 +23,7 @@ Descargar e instalar la aplicación no da acceso a ninguna información.
 
 ## Seguridad
 
-- Un solo permiso: `INTERNET`.
+- Acceso a Internet y permiso opcional de notificaciones (`POST_NOTIFICATIONS` en Android 13+).
 - Las pantallas del token no permiten capturas (`FLAG_SECURE`).
 - El secreto del token y la llave de sesión se guardan cifrados con el llavero de
   Android (AES/GCM); las copias de seguridad del sistema están desactivadas.
@@ -51,9 +51,10 @@ contraseña se guarda en este repositorio.**
 
 ## Documentos
 
+- [AUDITORIA-2026-09-28.md](AUDITORIA-2026-09-28.md) — auditoría funcional actual, correcciones y límites verificados.
 - [AUDITORIA-2026-09-23.md](AUDITORIA-2026-09-23.md) — auditoría de calidad y de
   políticas de Google Play, con lo corregido y lo pendiente.
 - [PLAY-STORE-READINESS.md](PLAY-STORE-READINESS.md) — qué falta antes de enviar a
   Google Play.
 - [PRUEBAS-Y-DESPLIEGUE.md](PRUEBAS-Y-DESPLIEGUE.md) — cómo se prueba y se despliega.
-- [supabase/](supabase/) — cambios aplicados en la base de datos.
+- [supabase/](supabase/) — scripts y funciones; su presencia en Git no confirma su despliegue en producción.

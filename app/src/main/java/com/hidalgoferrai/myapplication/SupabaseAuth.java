@@ -106,7 +106,7 @@ public final class SupabaseAuth {
 
     /** Invalida la sesión actual en Supabase; el cierre local no depende de que responda. */
     public static void cerrarSesion(String token) throws IOException {
-        pedir("POST", "/auth/v1/logout", token, "{}", null);
+        pedir("POST", "/auth/v1/logout?scope=local", token, "{}", null);
     }
 
     // Deja constancia de que la persona aceptó los términos y el tratamiento de sus datos.

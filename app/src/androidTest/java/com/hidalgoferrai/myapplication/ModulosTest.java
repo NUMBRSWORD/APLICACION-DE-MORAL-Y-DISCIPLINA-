@@ -179,6 +179,9 @@ public class ModulosTest {
         try(ActivityScenario<SeguimientoActivity> s=ActivityScenario.launch(SeguimientoActivity.class)){
             esperar(R.id.estadoPanel,null);
             s.onActivity(a->{assertEquals(View.GONE,a.findViewById(R.id.progreso).getVisibility());assertEquals(View.GONE,a.findViewById(R.id.tvPendientesVacio).getVisibility());});
+            onView(withId(R.id.etBuscarPendientes)).perform(replaceText("prueba"),closeSoftKeyboard());
+            s.onActivity(a->assertEquals(View.GONE,a.findViewById(R.id.tvPendientesVacio).getVisibility()));
+            onView(withId(R.id.etBuscarPendientes)).perform(replaceText(""),closeSoftKeyboard());
             fallo=false;onView(withId(R.id.btnReintentar)).perform(scrollTo(),click());esperar(R.id.tvCantidadPendientes,"1");
         }
     }
@@ -509,6 +512,14 @@ public class ModulosTest {
             js(s,"document.querySelector('.native-appeal').scrollIntoView()");Thread.sleep(200);captura("apelacion-opcional-registrada.png");
             js(s,"window.openQaNote('nota-archivo')");
             esperarJs(s,"document.querySelector('.native-appeal')===null");
+        }
+    }
+    @Test public void apelacionUsaFechaDeLimaNoElDiaUtcSiguiente() throws Exception {
+        casoPrueba();
+        WebActivity.moduloPrueba += "\ncasesQa.notes[0].orden_notificada_at='2026-09-19T02:00:00Z';";
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("detalle").putExtra(WebActivity.EXTRA_NOTA_ID,"nota-subida"))){
+            esperar(R.id.webView,null);
+            assertEquals("\"2026-09-18\"",js(s,"document.querySelector('.native-appeal input[name=fecha]').value"));
         }
     }
     @Test public void sinMigracionNiErrorSeInventanRecepciones() throws Exception {

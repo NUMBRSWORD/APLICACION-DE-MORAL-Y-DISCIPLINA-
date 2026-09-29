@@ -74,8 +74,7 @@ public class LoginActivity extends AppCompatActivity {
             if (tieneSesion) restaurarSesion(); else iniciarGoogle();
         });
         findViewById(R.id.btnOtraCuenta).setOnClickListener(v -> {
-            AlmacenSeguro.borrarRefresco(this);
-            Perfil.borrar(this);
+            SesionActual.cerrarLocal(this);
             tieneSesion = false;
             actualizarCuenta();
         });
@@ -162,7 +161,7 @@ public class LoginActivity extends AppCompatActivity {
         cargando(true);
         hilo.execute(() -> {
             try {
-                JSONObject sesion = SupabaseAuth.renovarSesion(AlmacenSeguro.refresco(this));
+                JSONObject sesion = new JSONObject(SesionActual.obtener(this));
                 verificarSesion(sesion, true);
             } catch (IOException | JSONException | RuntimeException e) {
                 avisarError(e);
@@ -173,7 +172,8 @@ public class LoginActivity extends AppCompatActivity {
     private void verificarSesion(JSONObject sesion, boolean registrarAceptacion)
             throws IOException, JSONException {
         String token = sesion.getString("access_token");
-        AlmacenSeguro.guardarRefresco(this, sesion.optString("refresh_token", null));
+        if (isFinishing() || isDestroyed()) return;
+        SesionActual.recibir(this, sesion.toString());
         JSONObject usuario = sesion.getJSONObject("user");
         String usuarioId = usuario.getString("id");
         String correo = usuario.optString("email", null);
@@ -184,6 +184,7 @@ public class LoginActivity extends AppCompatActivity {
         if ("aprobado".equals(estado) && SupabaseApi.necesitaCambiarClave(token)) {
             SesionActual.recibir(this, sesion.toString());
             runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
                 cargando(false);
                 seguridad.launch(new Intent(this, WebActivity.class)
                         .putExtra(WebActivity.EXTRA_VISTA, "seguridad"));
@@ -201,7 +202,7 @@ public class LoginActivity extends AppCompatActivity {
             if (isFinishing() || isDestroyed()) return;
             cargando(false);
             if (Errores.esSesion(e)) {
-                AlmacenSeguro.borrarRefresco(this);
+                SesionActual.cerrarLocal(this);
                 tieneSesion = false;
                 actualizarCuenta();
             }
@@ -211,6 +212,7 @@ public class LoginActivity extends AppCompatActivity {
 
     private void continuarSegunEstado(JSONObject sesion, String estado, String token,
                                       String usuarioId, String correo, boolean faltaIdentificarse) {
+        if (isFinishing() || isDestroyed()) return;
         cargando(false);
         if ("aprobado".equals(estado)) {
             startActivity(new Intent(this, FirmaActivity.class)

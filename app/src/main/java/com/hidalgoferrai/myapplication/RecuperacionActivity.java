@@ -33,7 +33,7 @@ public class RecuperacionActivity extends AppCompatActivity {
 
     public static final String EXTRA_TOKEN = "token";
 
-    private final ExecutorService hilo = Executors.newSingleThreadExecutor();
+    private boolean errorGeneracion;
     private TextView tvCodigos;
     private LinearProgressIndicator progreso;
     private MaterialButton btnContinuar, btnCopiar;
@@ -61,7 +61,7 @@ public class RecuperacionActivity extends AppCompatActivity {
         // Salir sin confirmar dejaría a la persona creyendo que los tiene guardados.
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {
-                if (cbGuardados.isChecked()) {
+                if (cbGuardados.isChecked() || errorGeneracion) {
                     setEnabled(false);
                     getOnBackPressedDispatcher().onBackPressed();
                 } else {
@@ -71,38 +71,59 @@ public class RecuperacionActivity extends AppCompatActivity {
             }
         });
 
-        generar(getIntent().getStringExtra(EXTRA_TOKEN));
-    }
-
-    @Override
-    protected void onDestroy() {
-        hilo.shutdown();
-        super.onDestroy();
-    }
-
-    private void generar(String token) {
-        hilo.execute(() -> {
-            try {
-                String[] nuevos = SupabaseApi.generarCodigosRecuperacion(token);
-                runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) return;
-                    codigos = nuevos;
-                    mostrar();
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) return;
-                    progreso.setVisibility(View.GONE);
-                    tvCodigos.setVisibility(View.VISIBLE);
-                    tvCodigos.setText(Errores.mensaje(e));
-                    // Sin códigos no se bloquea la entrada: se puede reintentar desde el token.
-                    cbGuardados.setVisibility(View.GONE);
-                    btnContinuar.setVisibility(View.VISIBLE);
-                    btnContinuar.setEnabled(true);
-                    btnContinuar.setText(R.string.recuperacion_continuar_sin);
-                });
-            }
+        Estado estado = new androidx.lifecycle.ViewModelProvider(this).get(Estado.class);
+        estado.resultado.observe(this, resultado -> {
+            if (resultado.codigos != null) {
+                codigos = resultado.codigos;
+                mostrar();
+            } else mostrarError(resultado.error);
         });
+        estado.generar(getApplicationContext(), getIntent().getStringExtra(EXTRA_TOKEN),
+                savedInstanceState != null);
+    }
+
+    private void mostrarError(Exception error) {
+        errorGeneracion = true;
+        progreso.setVisibility(View.GONE);
+        tvCodigos.setVisibility(View.VISIBLE);
+        tvCodigos.setText("proceso_restaurado".equals(error.getMessage())
+                ? R.string.recuperacion_interrumpida : Errores.mensaje(error));
+        cbGuardados.setVisibility(View.GONE);
+        btnContinuar.setVisibility(View.VISIBLE);
+        btnContinuar.setEnabled(true);
+        btnContinuar.setText(R.string.recuperacion_continuar_sin);
+    }
+
+    /** Conserva la única respuesta en memoria durante la rotación, nunca en Bundle/disco. */
+    public static final class Estado extends androidx.lifecycle.ViewModel {
+        final androidx.lifecycle.MutableLiveData<Resultado> resultado = new androidx.lifecycle.MutableLiveData<>();
+        private final ExecutorService hilo = Executors.newSingleThreadExecutor();
+        private boolean iniciado;
+        void generar(Context app, String tokenIntent, boolean restaurada) {
+            if (iniciado) return;
+            iniciado = true;
+            if (restaurada) {
+                // El proceso murió: no invalidar automáticamente los códigos ya entregados.
+                resultado.setValue(new Resultado(null, new java.io.IOException("proceso_restaurado")));
+                return;
+            }
+            String usuario = SesionActual.usuario();
+            hilo.execute(() -> {
+                try {
+                    String token = usuario != null || AlmacenSeguro.refresco(app) != null
+                            ? SesionActual.token(app, usuario) : tokenIntent;
+                    if (token == null) throw new SupabaseAuth.ErrorApi(401, "{}");
+                    resultado.postValue(new Resultado(SupabaseApi.generarCodigosRecuperacion(token), null));
+                } catch (Exception e) { resultado.postValue(new Resultado(null, e)); }
+            });
+        }
+        @Override protected void onCleared() { hilo.shutdown(); }
+    }
+
+    private static final class Resultado {
+        final String[] codigos;
+        final Exception error;
+        Resultado(String[] codigos, Exception error) { this.codigos = codigos; this.error = error; }
     }
 
     private void mostrar() {

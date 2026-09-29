@@ -33,6 +33,8 @@ public class EliminarCuentaActivity extends AppCompatActivity {
     private TextView tvEstado;
     private TextInputEditText motivo;
     private String token;
+    private String usuario;
+    private boolean ocupado;
     /** Falso cuando ya hay un pedido en curso o no hay sesión: el botón no vuelve a activarse. */
     private boolean puedePedir = true;
 
@@ -44,6 +46,7 @@ public class EliminarCuentaActivity extends AppCompatActivity {
         Diseno.bordes(this, true);
 
         token = getIntent().getStringExtra(EXTRA_TOKEN);
+        usuario = SesionActual.usuario();
         btnSolicitar = findViewById(R.id.btnSolicitar);
         progreso = findViewById(R.id.progreso);
         tvEstado = findViewById(R.id.tvEstado);
@@ -52,7 +55,7 @@ public class EliminarCuentaActivity extends AppCompatActivity {
         findViewById(R.id.btnVolver).setOnClickListener(v -> finish());
         btnSolicitar.setOnClickListener(v -> confirmar());
 
-        if (token == null) {
+        if (token == null && usuario == null && AlmacenSeguro.refresco(this) == null) {
             // Sin sesión no se puede identificar la cuenta: solo queda la vía pública.
             puedePedir = false;
             btnSolicitar.setEnabled(false);
@@ -81,25 +84,30 @@ public class EliminarCuentaActivity extends AppCompatActivity {
         cargando(true);
         hilo.execute(() -> {
             try {
+                renovarToken();
                 boolean pendiente = SupabaseApi.tieneEliminacionPendiente(token);
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     cargando(false);
                     if (pendiente) yaPedida();
                 });
             } catch (Exception e) {
                 // No poder consultarlo no debe impedir pedirlo: el servidor evita duplicados.
-                runOnUiThread(() -> cargando(false));
+                runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) cargando(false); });
             }
         });
     }
 
     private void enviar() {
+        if (ocupado || !puedePedir) return;
         cargando(true);
         String texto = motivo.getText() == null ? null : motivo.getText().toString();
         hilo.execute(() -> {
             try {
+                renovarToken();
                 String estado = SupabaseApi.solicitarEliminacion(token, texto);
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     cargando(false);
                     if ("ok".equals(estado) || "ya_pendiente".equals(estado)) {
                         yaPedida();
@@ -110,8 +118,9 @@ public class EliminarCuentaActivity extends AppCompatActivity {
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     cargando(false);
-                    mostrarEstado(R.string.eliminar_error);
+                    mostrarEstado(Errores.mensaje(e));
                 });
             }
         });
@@ -130,7 +139,14 @@ public class EliminarCuentaActivity extends AppCompatActivity {
     }
 
     private void cargando(boolean activo) {
+        ocupado = activo;
         progreso.setVisibility(activo ? View.VISIBLE : View.GONE);
         btnSolicitar.setEnabled(!activo && puedePedir);
+    }
+
+    private void renovarToken() throws Exception {
+        if (usuario != null || AlmacenSeguro.refresco(this) != null)
+            token = SesionActual.token(this, usuario);
+        if (token == null) throw new SupabaseAuth.ErrorApi(401, "{}");
     }
 }

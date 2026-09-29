@@ -123,6 +123,8 @@ public class WebActivity extends AppCompatActivity {
     private final Object propietarioSW = new Object();
     private boolean moduloListo;
     private boolean falloModulo;
+    private long epocaSesion;
+    private int solicitudCarga;
     private final Runnable tiempoAgotado = () -> mostrarError(R.string.modulo_no_disponible);
 
     private final ActivityResultLauncher<Intent> selectorArchivos = registerForActivityResult(
@@ -150,7 +152,8 @@ public class WebActivity extends AppCompatActivity {
         webView = findViewById(R.id.webView);
         progreso = findViewById(R.id.progreso);
         sesionParaWeb = getIntent().getStringExtra(EXTRA_SESION);
-        if (sesionParaWeb != null) SesionActual.recibir(this, sesionParaWeb);
+        if (sesionParaWeb != null) SesionActual.restaurar(this, sesionParaWeb);
+        epocaSesion = SesionActual.epoca();
         seccion = getIntent().getStringExtra(EXTRA_VISTA);
         if ("seguridad".equals(seccion)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         if (seccion != null && !seccion.matches("cumplimiento|seguimiento|efectivos|recepcion|detalle|registro|consulta|recepcion-fisica|panel|herramientas|roles|directivas|agenda|documentos|historial|reincorporacion|continuan|seguridad")) {
@@ -310,6 +313,7 @@ public class WebActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (callbackArchivos != null) { callbackArchivos.onReceiveValue(null); callbackArchivos = null; }
         descargas.shutdownNow();
         sesionHilo.shutdown();
         handler.removeCallbacksAndMessages(null);
@@ -324,6 +328,8 @@ public class WebActivity extends AppCompatActivity {
     }
 
     private void abrirExternamente(Uri uri) {
+        if (!"https".equals(uri.getScheme()) && !"http".equals(uri.getScheme())
+                && !"mailto".equals(uri.getScheme()) && !"tel".equals(uri.getScheme())) return;
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, uri));
         } catch (ActivityNotFoundException e) {
@@ -343,7 +349,8 @@ public class WebActivity extends AppCompatActivity {
                 Collections.singleton(ORIGEN_APP),
                 (vista, mensaje, origen, esMarcoPrincipal, respuesta) -> {
                     if (!esMarcoPrincipal || !"https".equals(origen.getScheme())
-                            || !HOST_APP.equals(origen.getHost())) {
+                            || !HOST_APP.equals(origen.getHost()) || vista.getUrl() == null
+                            || !vista.getUrl().startsWith(URL_APP)) {
                         return;
                     }
                     procesarDescarga(mensaje);
@@ -370,9 +377,11 @@ public class WebActivity extends AppCompatActivity {
                             case "security-complete":
                                 if ("seguridad".equals(seccion)) {
                                     String confirmada = datos.getJSONObject("session").toString();
+                                    long epocaConfirmada = epocaSesion;
                                     sesionHilo.execute(() -> {
-                                        SesionActual.recibir(getApplicationContext(), confirmada);
-                                        runOnUiThread(() -> { setResult(RESULT_OK); finish(); });
+                                        if (isFinishing() || isDestroyed() || epocaConfirmada != SesionActual.epoca()) return;
+                                        SesionActual.recibirSiVigente(getApplicationContext(), confirmada, epocaConfirmada);
+                                        runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) { setResult(RESULT_OK); finish(); } });
                                     });
                                 }
                                 break;
@@ -386,11 +395,15 @@ public class WebActivity extends AppCompatActivity {
                             case "back": finish(); break;
                             case "session":
                                 String nueva = datos.getJSONObject("session").toString();
-                                sesionHilo.execute(() -> SesionActual.recibir(getApplicationContext(), nueva));
+                                long epocaMensaje = epocaSesion;
+                                sesionHilo.execute(() -> {
+                                    if (!isFinishing() && !isDestroyed())
+                                        SesionActual.recibirSiVigente(getApplicationContext(), nueva, epocaMensaje);
+                                });
                                 break;
                             case "signed-out":
-                                SesionActual.borrar();
-                                AlmacenSeguro.borrarRefresco(WebActivity.this);
+                                SesionActual.cerrarLocal(WebActivity.this);
+                                if (seccion == null) epocaSesion = SesionActual.epoca();
                                 if (seccion != null) mostrarError(R.string.error_sesion);
                                 break;
                             default: break;
@@ -424,6 +437,7 @@ public class WebActivity extends AppCompatActivity {
     }
 
     private void cargarModulo() {
+        int solicitud = ++solicitudCarga;
         moduloListo = false;
         falloModulo = false;
         webView.stopLoading();
@@ -447,7 +461,8 @@ public class WebActivity extends AppCompatActivity {
                         .put("document",documentoUrl).put("filename",getIntent().getStringExtra(EXTRA_NOMBRE_DOCUMENTO));
                 String tema = asset("mobile_start.js");
                 runOnUiThread(() -> {
-                    if (isDestroyed() || isFinishing()) return;
+                    if (isDestroyed() || isFinishing() || solicitud != solicitudCarga) return;
+                    if (epocaSesion != SesionActual.epoca()) { mostrarError(R.string.error_sesion); return; }
                     configuracionWeb = config;
                     scriptTema = tema;
                     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -457,7 +472,9 @@ public class WebActivity extends AppCompatActivity {
                         mostrarError(R.string.modulo_actualizar_webview);
                     }
                 });
-            } catch (Exception e) { runOnUiThread(() -> mostrarError(Errores.mensaje(e))); }
+            } catch (Exception e) { runOnUiThread(() -> {
+                if (!isDestroyed() && !isFinishing() && solicitud == solicitudCarga) mostrarError(Errores.mensaje(e));
+            }); }
         });
     }
 
@@ -619,15 +636,22 @@ public class WebActivity extends AppCompatActivity {
             valores.put(MediaStore.Downloads.DISPLAY_NAME, nombre);
             valores.put(MediaStore.Downloads.MIME_TYPE, tipo);
             valores.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            valores.put(MediaStore.Downloads.IS_PENDING, 1);
             Uri destino = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, valores);
             if (destino == null) {
                 throw new IOException("Sin destino");
             }
-            try (OutputStream salida = getContentResolver().openOutputStream(destino)) {
-                if (salida == null) {
-                    throw new IOException("Sin salida");
+            try {
+                try (OutputStream salida = getContentResolver().openOutputStream(destino)) {
+                    if (salida == null) throw new IOException("Sin salida");
+                    salida.write(datos);
                 }
-                salida.write(datos);
+                ContentValues lista = new ContentValues();
+                lista.put(MediaStore.Downloads.IS_PENDING, 0);
+                getContentResolver().update(destino, lista, null, null);
+            } catch (IOException | RuntimeException e) {
+                getContentResolver().delete(destino, null, null);
+                throw e;
             }
             return getString(R.string.web_carpeta_descargas);
         }
@@ -636,8 +660,17 @@ public class WebActivity extends AppCompatActivity {
             throw new IOException("Sin almacenamiento");
         }
         File archivo = new File(carpeta, nombre);
+        for (int copia = 1; !archivo.createNewFile(); copia++) {
+            int punto = nombre.lastIndexOf('.');
+            String base = punto > 0 ? nombre.substring(0, punto) : nombre;
+            String extension = punto > 0 ? nombre.substring(punto) : "";
+            archivo = new File(carpeta, base + " (" + copia + ")" + extension);
+        }
         try (OutputStream salida = new FileOutputStream(archivo)) {
             salida.write(datos);
+        } catch (IOException e) {
+            archivo.delete();
+            throw e;
         }
         return archivo.getAbsolutePath();
     }

@@ -17,18 +17,25 @@ import com.google.firebase.messaging.RemoteMessage;
 
 /** Solo presenta mensajes de tipo conocido, destinados a la cuenta abierta en este móvil. */
 public final class AvisosFirebaseService extends FirebaseMessagingService {
-    private static final String CANAL = "casos_y_plazos";
+    static final String CANAL = "casos_y_plazos";
 
     @Override public void onNewToken(String token) {
         AvisosAndroid.tokenRenovado(this, token);
     }
 
-    @Override public void onMessageReceived(RemoteMessage mensaje) {
+    @Override public synchronized void onMessageReceived(RemoteMessage mensaje) {
         if (!AvisosAndroid.habilitado(this)) return;
         String usuario = Perfil.usuarioId(this);
         if (usuario == null || !usuario.equals(mensaje.getData().get("user_id"))) return;
         int contenido = textoParaTipo(mensaje.getData().get("tipo"));
         if (contenido == 0) return;
+        if (!AvisosAndroid.permitidos(this)) return;
+        String id = mensaje.getData().get("aviso_id");
+        boolean identificada = id != null && id.matches("[a-f0-9]{64}");
+        android.content.SharedPreferences recibidos = getSharedPreferences("avisos_recibidos", MODE_PRIVATE);
+        String clave = usuario + ":" + id;
+        java.util.Set<String> historial = new java.util.HashSet<>(recibidos.getStringSet("ids", java.util.Collections.emptySet()));
+        if (identificada && historial.contains(clave)) return;
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
                 Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
 
@@ -51,8 +58,14 @@ public final class AvisosFirebaseService extends FirebaseMessagingService {
                 .setContentText(getString(contenido))
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
                 .setContentIntent(destino);
-        NotificationManagerCompat.from(this).notify((int) System.currentTimeMillis(), aviso.build());
+        if (identificada) {
+            NotificationManagerCompat.from(this).notify(id, 0, aviso.build());
+            if (historial.size() >= 200) historial.clear();
+            historial.add(clave);
+            recibidos.edit().putStringSet("ids", historial).apply();
+        } else NotificationManagerCompat.from(this).notify((int) System.currentTimeMillis(), aviso.build());
     }
 
     static int textoParaTipo(String tipo) {
@@ -60,6 +73,7 @@ public final class AvisosFirebaseService extends FirebaseMessagingService {
         if ("plazo_descargo".equals(tipo)) return R.string.aviso_plazo_descargo;
         if ("pasos_pendientes".equals(tipo)) return R.string.aviso_pasos_pendientes;
         if ("documento_recibido".equals(tipo)) return R.string.aviso_documento_recibido;
+        if ("prueba".equals(tipo)) return R.string.aviso_prueba;
         return 0;
     }
 }

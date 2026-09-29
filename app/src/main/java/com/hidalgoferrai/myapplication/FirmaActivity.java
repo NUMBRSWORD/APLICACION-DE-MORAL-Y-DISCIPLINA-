@@ -60,6 +60,7 @@ public class FirmaActivity extends AppCompatActivity {
         token = getIntent().getStringExtra(EXTRA_TOKEN);
         usuarioId = getIntent().getStringExtra(EXTRA_USUARIO_ID);
         sesion = getIntent().getStringExtra(EXTRA_SESION);
+        SesionActual.restaurar(this, sesion);
         if (token == null || usuarioId == null) {
             finish();
             return;
@@ -111,6 +112,7 @@ public class FirmaActivity extends AppCompatActivity {
         progreso.setVisibility(View.VISIBLE);
         hilo.execute(() -> {
             try {
+                token = SesionActual.token(this, usuarioId);
                 JSONArray docs = SupabaseApi.documentosInstitucionales(token);
                 Set<String> mias = SupabaseApi.misFirmas(token, usuarioId);
                 JSONObject solicitud = SupabaseApi.miSolicitud(token, usuarioId);
@@ -281,6 +283,7 @@ public class FirmaActivity extends AppCompatActivity {
         progreso.setVisibility(View.VISIBLE);
         hilo.execute(() -> {
             try {
+                token = SesionActual.token(this, usuarioId);
                 SupabaseApi.firmar(token, documentoId, version, usuarioId, nombre, grado, cargo);
                 Perfil.guardar(this, usuarioId, grado, nombre, null);
                 Set<String> mias = SupabaseApi.misFirmas(token, usuarioId);

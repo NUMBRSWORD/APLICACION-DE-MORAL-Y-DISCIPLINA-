@@ -14,7 +14,11 @@ compila sin Firebase configurado, pero en ese caso **no registra ni recibe aviso
    con el rol mínimo `Firebase Cloud Messaging API Admin`. Guardar su clave JSON
    en secretos de Edge Functions de Supabase; jamás en el APK, en Git o en un
    archivo público. Confirmar que la API FCM HTTP v1 está habilitada.
-### Estado al 27/09/2026
+### Nota de auditoría del 28/09/2026
+
+La sección siguiente es un registro histórico, no una verificación actual de producción. Firebase ya está configurado en esta copia y la prueba QA obtuvo un token real. La auditoría encontró fallos en la fuente del servidor; las correcciones y la migración de reserva de entregas están preparadas, **sin desplegar**. Ver `AUDITORIA-2026-09-28.md` y `docs/despliegue-auditoria-2026-09-28.md`. El payload auditado añade `aviso_id` opaco para deduplicación y el tipo explícito `prueba`.
+
+### Estado histórico al 27/09/2026
 
 - **Paso 2 hecho.** Aplicado en el proyecto `tndjulaitywtoocqeeiy` como migración
   `registro_de_dispositivos_android`. Comprobado: la tabla tiene RLS activa, cero

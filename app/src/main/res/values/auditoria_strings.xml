@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="aviso_prueba">Aviso de prueba. Las notificaciones de Faltos están conectadas; no se ha creado ningún caso.</string>
+    <string name="recuperacion_interrumpida">La aplicación se cerró mientras mostraba los códigos. No se han generado otros automáticamente. Conserve los que guardó o genere una nueva lista desde Token Digital.</string>
+    <string name="token_anterior_pendiente">El token de este teléfono está activo, pero no pudimos desactivar el del teléfono anterior. Solicite su revisión desde la web antes de entregar o desechar el teléfono anterior.</string>
+</resources>
