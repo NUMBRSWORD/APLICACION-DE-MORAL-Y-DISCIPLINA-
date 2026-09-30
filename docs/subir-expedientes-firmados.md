@@ -91,11 +91,18 @@ El recorrido completo:
 
 1. **Leer, página por página.** Los expedientes firmados son escaneos sin capa
    de texto —comprobado en los tres modelos reales: cero fuentes tipográficas—,
-   así que el texto sale siempre del reconocimiento óptico. Se pide **una página
-   por llamada** a propósito: en lotes se perdería el límite entre página y
-   página, que es justo el dato que hace falta para recortar.
-2. **Separar.** Cada expediente abre con su Hoja de Trámite o con su inicio de
-   imputación. Lo que venga antes de la primera apertura se queda con el primer
+   así que el texto sale siempre del reconocimiento óptico. Se mandan **de a
+   cuatro páginas, pidiendo una marca de corte entre ellas**, y el servidor
+   comprueba que vuelvan las cuatro; si la cuenta no cuadra, solo ese lote se
+   repite de a una. Así se conserva el límite exacto entre páginas sin gastar
+   una llamada por hoja: un fajo de veinticinco se lee en siete llamadas y no en
+   veinticinco, lo que importa porque el tope diario de IA es de 300 para todo
+   el sistema.
+2. **Separar.** Cada expediente abre con su inicio de imputación —o con una
+   Hoja de Trámite, en los fajos que ya pasaron por mesa de partes. La apertura
+   normal es la imputación: **la Hoja de Trámite se genera en el SIGE después**,
+   al remitir el expediente, así que el que devuelve firmado el investigado no
+   la trae. Lo que venga antes de la primera apertura se queda con el primer
    expediente en vez de perderse.
 3. **Leer los datos** con las reglas de `lib/expedienteFirmado.js`.
 4. **Pedir ayuda a la IA**, solo para los expedientes a los que les falte una
@@ -119,6 +126,15 @@ No se guarda nada sin confirmar, y estas filas no se pueden confirmar:
 Y estas avisan pero sí se pueden guardar: se encontró por CIP o por nombre en
 vez de por número de nota, falta alguna pieza, la sanción no se dejó leer, el
 caso ya tenía un expediente (se reemplaza), o la IA completó parte de los datos.
+
+### El oficio y la Hoja de Trámite se anotan después
+
+Los dos se generan **cuando el expediente ya está subido**: el oficio puede
+salir de la web, pero la Hoja de Trámite sale del SIGE. Por eso la carga en
+lote los deja vacíos, y por eso el formulario del expediente en el detalle del
+caso **se muestra también cuando el expediente ya existe**, con sus valores
+cargados, para completarlos o corregirlos más tarde. Antes solo aparecía si el
+caso no tenía expediente: subido en lote, no habría habido dónde anotarlos.
 
 ### Tres arreglos en la base que hicieron falta
 
