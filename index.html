@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="Faltos: herramienta independiente para organizar expedientes por infracciones Leves (Ley N.° 30714) —notas informativas, imputación, descargos y órdenes de sanción— con asistencia de IA supervisada. No pertenece a ninguna entidad pública." />
+<meta name="robots" content="noindex, nofollow" />
+<script>if (window.top !== window.self) { document.documentElement.style.display = "none"; window.top.location = window.self.location; }</script>
+<title>Faltos — Expedientes disciplinarios</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<meta name="theme-color" content="#0f1720" />
+<meta name="application-name" content="Moral y Disciplina" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Moral y Disciplina" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="stylesheet" href="styles.css" />
+<script>
+  // Aplica el tema ANTES de pintar la página para que no haya parpadeo.
+  // Prioridad: elección guardada del usuario > preferencia del sistema
+  // operativo (prefers-color-scheme) > oscuro por defecto.
+  (function () {
+    var t = localStorage.getItem("tema");
+    if (!t && window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) t = "light";
+    if (t === "light") document.documentElement.setAttribute("data-theme", "light");
+  })();
+</script>
+</head>
+<body>
+
+<a href="#main" class="skip-link">Saltar al contenido principal</a>
+
+<button id="btnTemaToggle" class="tema-toggle" type="button" aria-label="Cambiar tema claro/oscuro" title="Cambiar tema claro/oscuro"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+
+<header id="topbar" class="hidden">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-badge">F</span>
+      <span class="brand-titles">
+        <span class="brand-title">Faltos</span>
+        <span class="brand-sub">Expedientes disciplinarios · <strong>Herramienta independiente</strong></span>
+      </span>
+    </div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-view="dashboard">Expedientes</button>
+      <button id="tabSeguimiento" class="tab-btn" data-view="seguimiento">Seguimiento</button>
+      <button class="tab-btn" data-view="cumplimiento">Cumplimiento</button>
+      <button class="tab-btn admin-only hidden" data-view="efectivos">Efectivos</button>
+      <button class="tab-btn admin-only hidden" data-view="roles">Roles</button>
+      <button class="tab-btn admin-only hidden" data-view="directivas">Directivas</button>
+      <button class="tab-btn admin-only hidden" data-view="agenda">Agenda</button>
+      <button class="tab-btn admin-only hidden" data-view="documentos">Documentos</button>
+      <button class="tab-btn admin-only hidden" data-view="recepcion">Recepción</button>
+      <button class="tab-btn admin-only hidden" data-view="panel">Panel</button>
+      <button class="tab-btn admin-only hidden" data-view="historial">Historial</button>
+    </nav>
+    <div class="user-box">
+      <button id="btnPaletaBuscar" class="btn-ghost palette-hint" type="button" title="Buscar expediente (Ctrl + K)"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>Buscar <kbd>Ctrl</kbd><kbd>K</kbd></button>
+      <span id="userEmail"></span>
+      <span id="userRole" class="badge"></span>
+      <button id="btnCambiarClave" class="btn-ghost" type="button">Cambiar clave</button>
+      <button id="btnLogout" class="btn-ghost">Salir</button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- LOGIN -->
+  <section id="view-login" class="view center-view">
+    <form id="loginForm" class="card login-card">
+      <div class="brand center">
+        <span class="brand-badge lg">F</span>
+        <h1>Faltos</h1>
+        <p class="muted">Organización de expedientes por infracciones Leves (Ley N.° 30714)</p>
+        <p class="uso-interno-chip">🔒 Acceso restringido a personas autorizadas</p>
+      </div>
+      <label>Correo o CIP
+        <input type="text" id="loginEmail" required autocomplete="username" />
+      </label>
+      <label>Clave
+        <input type="password" id="loginPassword" required autocomplete="current-password" />
+      </label>
+      <p id="loginError" class="error hidden" role="alert"></p>
+      <button type="submit" class="btn-primary">Ingresar</button>
+      <!-- La aplicación Android oculta este bloque: Google no permite iniciar sesión
+           dentro de una vista web incrustada, allí se usa su botón propio. -->
+      <div id="accesoGoogle">
+        <p class="muted small" style="margin:14px 0 8px; text-align:center">o</p>
+        <button type="button" id="btnEntrarGoogle" class="btn-secondary" style="width:100%">
+          Continuar con Google
+        </button>
+        <p class="muted small" style="margin-top:10px; text-align:center">
+          Su cuenta de Google es distinta de la clave de este formulario.
+        </p>
+      </div>
+      <p class="muted small" style="margin-top:6px; text-align:center"><button type="button" class="btn-ghost" data-abrir-aviso>Aviso de privacidad</button></p>
+      <p class="muted small" style="margin-top:2px; text-align:center"><a href="eliminar-cuenta.html">Eliminar mi cuenta</a></p>
+    </form>
+  </section>
+
+  <!-- SEGUNDO FACTOR: CÓDIGO DEL TOKEN (app Faltos) -->
+  <section id="view-token" class="view center-view hidden">
+    <form id="tokenForm" class="card login-card">
+      <div class="brand center">
+        <span class="brand-badge lg">F</span>
+        <h1>Código del token</h1>
+        <p class="muted">Abra la aplicación <strong>Faltos</strong> en su celular y escriba el código de 6 dígitos que le muestra.</p>
+      </div>
+      <label>Código
+        <input type="text" id="tokenCodigo" required inputmode="numeric" autocomplete="one-time-code"
+               maxlength="6" pattern="[0-9]{6}" placeholder="000000" />
+      </label>
+      <p id="tokenError" class="error hidden" role="alert"></p>
+      <button type="submit" class="btn-primary">Verificar</button>
+      <button type="button" id="tokenSalir" class="btn-ghost">Cancelar y salir</button>
+    </form>
+  </section>
+
+  <!-- DASHBOARD: NOTAS INFORMATIVAS -->
+  <section id="view-dashboard" class="view hidden">
+    <div class="view-header">
+      <div>
+        <h2>Seguimiento disciplinario</h2>
+        <p class="muted view-subtitle">Expedientes pendientes: identifique la siguiente acción de cada uno. Los ya resueltos pasan a la pestaña «Seguimiento».</p>
+      </div>
+      <div class="view-actions">
+        <button id="btnFaltasLote" class="btn-secondary admin-only hidden">Faltas (PDF grupal)</button>
+        <button id="btnContinuanFaltosLote" class="btn-secondary admin-only hidden">Continúan faltos (PDF)</button>
+        <button id="btnReincorporacionLote" class="btn-secondary admin-only hidden">Reincorporación (PDF grupal)</button>
+        <button id="btnNuevaNota" class="btn-primary admin-only hidden">+ Nueva nota</button>
+      </div>
+    </div>
+    <div id="notasResumenRapido" class="quick-summary" aria-live="polite"></div>
+    <section id="bandejaAcciones" class="action-tray hidden" aria-labelledby="bandejaAccionesTitulo">
+      <div class="action-tray-header">
+        <div>
+          <span class="eyebrow">Siguiente acción</span>
+          <h3 id="bandejaAccionesTitulo">Pendientes prioritarios</h3>
+        </div>
+        <span id="bandejaAccionesCount" class="badge"></span>
+      </div>
+      <div id="bandejaAccionesLista" class="action-list"></div>
+    </section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Grado</th>
+            <th>Nombres y apellidos</th>
+            <th>Fecha/hora falta</th>
+            <th>N.º nota</th>
+            <th>Oficial</th>
+            <th>Fecha/hora reinc.</th>
+            <th>N.º nota reinc.</th>
+            <th>Tiempo ausente</th>
+            <th>Código infracción</th>
+            <th>Etapa actual</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="notasTableBody"></tbody>
+      </table>
+      <p id="notasEmpty" class="muted hidden">No hay notas informativas registradas.</p>
+    </div>
+    <section id="panelMovil" class="mobile-app-panel" aria-labelledby="panelMovilTitulo">
+      <div class="mobile-app-icon" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></div>
+      <div class="mobile-app-copy">
+        <span class="eyebrow">Aplicación móvil</span>
+        <h3 id="panelMovilTitulo">Alertas de expedientes pendientes</h3>
+        <p id="estadoAlertasMovil" class="muted small">Instale la aplicación y active las alertas para recibir avisos de sus expedientes en el celular.</p>
+      </div>
+      <div class="mobile-app-actions">
+        <button id="btnInstalarApp" type="button" class="btn-secondary hidden">Instalar app</button>
+        <button id="btnActivarAlertas" type="button" class="btn-primary">Activar alertas</button>
+      </div>
+    </section>
+  </section>
+
+  <!-- SEGUIMIENTO: BUSCAR / FILTRAR / EXPORTAR / RESUMEN IA -->
+  <section id="view-seguimiento" class="view hidden">
+    <div class="view-header">
+      <div>
+        <h2>Seguimiento</h2>
+        <p class="muted view-subtitle">Escriba un nombre o apellido para ver la <strong>ficha de esa persona</strong>: cuántas veces faltó, cuánto tiempo acumulado y en qué estado está cada caso. Abajo, el archivo de expedientes resueltos (Orden notificada), que también puede filtrar por fecha, exportar a Excel o resumir con IA.</p>
+      </div>
+      <div class="view-actions">
+        <button id="btnExportarExcel" class="btn-secondary">Exportar a Excel</button>
+        <button id="btnResumenEjecutivo" class="btn-secondary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Resumen ejecutivo IA</button>
+      </div>
+    </div>
+    <div id="panelBusquedaNotas" class="search-panel">
+      <div class="search-box">
+        <input id="searchNotas" type="search" placeholder="Escriba un nombre o apellido (por ejemplo «lop») para ver a la persona..." autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sugerenciasPersonas" aria-autocomplete="list" />
+        <div id="sugerenciasPersonas" class="sugerencias hidden" role="listbox" aria-label="Personas encontradas"></div>
+      </div>
+      <label class="inline-filter">Desde <input id="filtroDesde" type="date" /></label>
+      <label class="inline-filter">Hasta <input id="filtroHasta" type="date" /></label>
+      <button id="btnLimpiarFiltroFecha" class="btn-ghost">Limpiar</button>
+    </div>
+    <section id="fichaPersona" class="detail-card hidden" aria-live="polite" style="margin-bottom:16px">
+      <div class="detail-card-header">
+        <div>
+          <h3 id="fichaTitulo"></h3>
+          <p id="fichaSubtitulo" class="muted small"></p>
+        </div>
+        <button type="button" id="btnCerrarFicha" class="btn-ghost" aria-label="Cerrar la ficha">✕</button>
+      </div>
+      <div id="fichaTiles" class="ficha-tiles"></div>
+      <div id="fichaCodigos" class="ficha-codigos"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Grado</th>
+              <th>Nombres y apellidos</th>
+              <th>Fecha/hora falta</th>
+              <th>N.º nota</th>
+              <th>Oficial</th>
+              <th>Fecha/hora reinc.</th>
+              <th>N.º nota reinc.</th>
+              <th>Tiempo ausente</th>
+              <th>Código infracción</th>
+              <th>Etapa actual</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="fichaTableBody"></tbody>
+        </table>
+        <p id="fichaEmpty" class="muted hidden">Esta persona no tiene expedientes.</p>
+      </div>
+    </section>
+    <div id="resumenEjecutivoPanel" class="detail-card hidden" style="margin-bottom:16px">
+      <div class="detail-card-header">
+        <h3>Resumen ejecutivo (IA)</h3>
+        <button type="button" id="btnCerrarResumenEjecutivo" class="btn-ghost">✕</button>
+      </div>
+      <p id="resumenEjecutivoStatus" class="muted small hidden"></p>
+      <p id="resumenEjecutivoContenido" style="white-space:pre-wrap"></p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Grado</th>
+            <th>Nombres y apellidos</th>
+            <th>Fecha/hora falta</th>
+            <th>N.º nota</th>
+            <th>Oficial</th>
+            <th>Fecha/hora reinc.</th>
+            <th>N.º nota reinc.</th>
+            <th>Tiempo ausente</th>
+            <th>Código infracción</th>
+            <th>Etapa actual</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="seguimientoTableBody"></tbody>
+      </table>
+      <p id="seguimientoEmpty" class="muted hidden">No hay expedientes que coincidan.</p>
+    </div>
+  </section>
+
+  <!-- AGENDA OPERATIVA -->
+  <section id="view-agenda" class="view hidden">
+    <div class="view-header">
+      <div>
+        <h2>Agenda operativa</h2>
+        <p class="muted view-subtitle">Pendientes priorizados para resolver, con acceso directo a la nota.</p>
+      </div>
+      <div class="view-actions">
+        <input id="buscarAgenda" type="search" placeholder="Buscar en pendientes..." />
+        <button id="btnExportarAgenda" class="btn-secondary">Exportar calendario</button>
+      </div>
+    </div>
+    <div id="agendaEmpty" class="empty-state hidden">
+      <strong>Todo está al día</strong>
+      <span class="muted">No hay acciones pendientes por mostrar.</span>
+    </div>
+    <div id="agendaLista" class="agenda-list"></div>
+  </section>
+
+  <!-- CENTRO DE DOCUMENTOS -->
+  <section id="view-documentos" class="view hidden">
+    <div class="view-header">
+      <div>
+        <h2>Centro de documentos</h2>
+        <p class="muted view-subtitle">Versiones generadas y archivadas desde todas las notas.</p>
+      </div>
+      <input id="buscarDocumentos" type="search" placeholder="Buscar documento..." />
+    </div>
+    <div id="documentosEmpty" class="empty-state hidden">
+      <strong>No hay documentos generados</strong>
+      <span class="muted">Los documentos que generes aparecerán aquí.</span>
+    </div>
+    <div id="documentosLista" class="document-list"></div>
+  </section>
+
+  <!-- RECEPCIÓN DE EXPEDIENTES CERRADOS -->
+  <section id="view-recepcion" class="view hidden">
+    <div class="view-header">
+      <div>
+        <h2>Recepción de expedientes cerrados</h2>
+        <p class="muted view-subtitle">Registro interno de expedientes firmados, HT y oficios; ordenado por fecha de la falta, investigado e infracción.</p>
+      </div>
+      <div class="view-actions">
+        <input id="buscarRecepcion" type="search" placeholder="Buscar por nombre, CIP o código..." />
+        <button id="btnConectarDrive" type="button" class="btn-secondary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>Conectar Drive</button>
+        <button id="btnRegistrarExpedienteRecibido" type="button" class="btn-primary">+ Registrar expediente recibido</button>
+      </div>
+    </div>
+    <p id="estadoRespaldoDrive" class="muted small">Google Drive aún no está conectado. Los expedientes ya están protegidos en Supabase.</p>
+    <section id="registroRecepcionPanel" class="detail-card hidden">
+      <div class="detail-card-header"><div><span class="eyebrow">Registro administrativo</span><h3>Recibir expediente completo firmado</h3></div><button id="btnCancelarRegistroRecepcion" type="button" class="btn-ghost">Cerrar</button></div>
+      <p class="muted small">El PDF final debe contener los documentos firmados: Imputación y su constancia de notificación, Descargo o Acta de No Descargo, Orden de Sanción y su cargo firmado. Los registros digitales se enlazan solos.</p>
+      <form id="registroRecepcionForm">
+        <label>Expediente cerrado
+          <select id="fNotaRecibida" required></select>
+        </label>
+        <div id="checklistExpedienteRecibido" class="detail-grid"><p class="muted small">Seleccione un expediente para revisar sus documentos firmados.</p></div>
+        <label>Expediente completo firmado (un solo PDF)
+          <input type="file" id="fArchivoExpedienteRecibido" accept="application/pdf" required />
+        </label>
+        <label>Observación de recepción (opcional)
+          <textarea id="fObservacionExpedienteRecibido" rows="2" placeholder="Ej.: recibido físicamente y digitalizado."></textarea>
+        </label>
+        <p id="registroRecepcionError" class="error hidden" role="alert"></p>
+        <button type="submit" class="btn-primary">Registrar expediente</button>
+      </form>
+    </section>
+    <section class="reception-guide" aria-label="Flujo de recepción">
+      <span>1. Recibe expediente</span><span>2. Registra PDF firmado</span><span>3. Adjunta HT y Oficio</span><span>4. Archiva</span>
+    </section>
+    <div id="recepcionResumen" class="quick-summary reception-summary" aria-live="polite"></div>
+    <div id="recepcionEmpty" class="empty-state hidden">
+      <strong>Aún no hay expedientes recibidos</strong>
+      <span class="muted">Registre aquí los expedientes cerrados (Orden generada y notificada) con su PDF firmado.</span>
+    </div>
+    <div id="recepcionLista" class="reception-list"></div>
+  </section>
+
+  <!-- EFECTIVOS -->
+  <section id="view-efectivos" class="view hidden">
+    <div class="view-header">
+      <h2>Efectivos (CIP / DNI)</h2>
+      <div class="view-actions">
+        <input id="searchEfectivos" type="search" placeholder="Buscar por CIP, DNI o nombre..." />
+        <button id="btnNuevoEfectivo" class="btn-primary admin-only hidden">+ Nuevo efectivo</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Grado</th>
+            <th>Apellidos y nombres</th>
+            <th>CIP</th>
+            <th>DNI</th>
+          </tr>
+        </thead>
+        <tbody id="efectivosTableBody"></tbody>
+      </table>
+      <p id="efectivosEmpty" class="muted hidden">Sin resultados.</p>
+    </div>
+  </section>
+
+  <!-- ROLES DE SERVICIO -->
+  <section id="view-roles" class="view hidden">
+    <div class="view-header">
+      <div>
+        <h2>Roles de servicio</h2>
+        <p class="muted view-subtitle">Suba el rol de cada día. Al registrar una falta, la app toma el puesto del investigado del rol de esa fecha, sin volver a subir el archivo.</p>
+      </div>
+    </div>
+    <section class="detail-card">
+      <form id="rolForm" class="grid-2">
+        <label>Fecha del rol (día en que arranca el servicio)
+          <input type="date" id="rolFecha" required />
+        </label>
+        <label>Archivo del rol (PDF/imagen)
+          <input type="file" id="rolArchivo" accept="application/pdf,image/*" required />
+        </label>
+        <p id="rolFormError" class="error hidden" role="alert"></p>
+        <div class="modal-actions" style="justify-content:flex-start; grid-column:1/-1; margin:0">
+          <button type="submit" class="btn-primary">Subir rol</button>
+        </div>
+        <p id="rolFormStatus" class="muted small hidden" style="grid-column:1/-1"></p>
+      </form>
+    </section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Archivo</th>
+            <th>Subido</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rolesTableBody"></tbody>
+      </table>
+      <p id="rolesEmpty" class="muted hidden">Todavía no hay roles de servicio cargados.</p>
+    </div>
+  </section>
+
+  <!-- DETALLE / EDICION NOTA -->
+  <section id="view-nota-detail" class="view hidden">
+    <div class="view-header">
+      <button id="btnVolverDashboard" class="btn-ghost">&larr; Volver</button>
+    </div>
+    <div id="notaDetailContent"></div>
+  </section>
+
+  <!-- DIRECTIVAS INTERNAS -->
+  <section id="view-directivas" class="view hidden">
+    <div class="view-header">
+      <h2>Directivas internas</h2>
+      <div class="view-actions">
+        <button id="btnNuevaDirectiva" class="btn-primary admin-only hidden">+ Nueva directiva</button>
+      </div>
+    </div>
+    <p class="muted small">Aquí se registra el texto real de las directivas internas vigentes de la PNP (por ejemplo, los requisitos para que un descanso médico particular sea exonerante). La IA de esta aplicación (redacción de la Orden de Sanción y el asistente de consulta) solo aplica lo que esté escrito aquí literalmente — si no hay una directiva cargada sobre algo, la IA lo dice en vez de inventarlo.</p>
+    <div id="directivasList"></div>
+    <p id="directivasEmpty" class="muted hidden">No hay directivas registradas todavía.</p>
+  </section>
+
+  <!-- CUMPLIMIENTO: POLITICAS INSTITUCIONALES Y FIRMA ELECTRONICA -->
+  <section id="view-cumplimiento" class="view hidden">
+    <div class="view-header">
+      <h2>Cumplimiento</h2>
+    </div>
+    <p class="muted small"><button type="button" class="btn-ghost" data-abrir-aviso>Ver el aviso de privacidad</button></p>
+    <p class="muted small">Políticas institucionales vigentes de este módulo. Revíselas y firme con su propia cuenta para dejar constancia interna de que las conoce (esta firma no reemplaza a la firma digital de la Ley N.° 27269) — la firma queda registrada con su nombre, cargo, fecha y la versión exacta del texto que firmó.</p>
+    <div id="cumplimientoLista"></div>
+    <p id="cumplimientoEmpty" class="muted hidden">No hay documentos institucionales registrados todavía.</p>
+  </section>
+
+  <!-- PANEL DE METRICAS -->
+  <section id="view-panel" class="view hidden">
+    <div class="view-header">
+      <h2>Panel</h2>
+    </div>
+    <p id="panelEmpty" class="muted hidden">Todavía no hay notas informativas para mostrar métricas.</p>
+    <div id="panelContenido">
+      <div class="panel-stats" id="panelStats"></div>
+
+      <section class="detail-card" id="resumenMensualCard">
+        <div class="detail-card-header">
+          <div>
+            <h3>Resumen mensual</h3>
+            <span class="muted small">Faltas del mes, por código de infracción y personal reiterativo</span>
+          </div>
+          <select id="resumenMesSelect"></select>
+        </div>
+        <p class="muted small resumen-pista">Toque un recuadro para ver qué efectivos faltaron, en qué días y cuánto tiempo.</p>
+        <div class="panel-stats" id="resumenMensualStats"></div>
+        <div id="resumenLista" class="resumen-lista hidden">
+          <div class="detail-card-header">
+            <div>
+              <h4 id="resumenListaTitulo"></h4>
+              <span id="resumenListaSubtitulo" class="muted small"></span>
+            </div>
+            <button type="button" id="btnCerrarResumenLista" class="btn-ghost" aria-label="Cerrar la lista">✕</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Efectivo</th><th>Faltas</th><th>Días que faltó</th><th>Tiempo ausente</th><th>Descuento aprox.</th><th>Códigos</th></tr></thead>
+              <tbody id="resumenListaBody"></tbody>
+            </table>
+          </div>
+          <p id="resumenListaNota" class="muted small"></p>
+          <p id="resumenListaEmpty" class="muted small hidden"></p>
+        </div>
+        <p class="eyebrow">Por código de infracción</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Código</th><th>Cantidad</th></tr></thead>
+            <tbody id="resumenCodigoBody"></tbody>
+          </table>
+        </div>
+        <p class="eyebrow" style="margin-top:20px">Reiterativos — más de 3 faltas <span id="resumenPeriodoTxt">en el mes</span> <span class="muted small" style="text-transform:none; letter-spacing:0; font-weight:400">(sin nombre)</span></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Caso</th><th>Grado</th><th>Faltas</th><th>Códigos del mes</th></tr></thead>
+            <tbody id="resumenReiterativosBody"></tbody>
+          </table>
+        </div>
+        <p id="resumenReiterativosEmpty" class="muted small hidden">Nadie superó las 3 faltas este mes.</p>
+      </section>
+
+      <div class="panel-charts">
+        <div class="detail-card panel-chart-card">
+          <h3>Casos por estado del trámite</h3>
+          <div class="panel-chart-wrap"><canvas id="chartEstado"></canvas></div>
+        </div>
+        <div class="detail-card panel-chart-card">
+          <h3>Casos por código de infracción</h3>
+          <div class="panel-chart-wrap"><canvas id="chartCodigo"></canvas></div>
+        </div>
+        <div class="detail-card panel-chart-card panel-chart-wide">
+          <h3>Tendencia mensual de faltas</h3>
+          <div class="panel-chart-wrap"><canvas id="chartTendencia"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HISTORIAL DE ACTIVIDAD -->
+  <section id="view-historial" class="view hidden">
+    <div class="view-header">
+      <h2>Historial de actividad</h2>
+    </div>
+    <p class="muted small">Registro automático e inalterable de cambios en notas informativas, expedientes, efectivos y directivas — quién, qué y cuándo. Se genera solo, no depende de que nadie lo marque.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha/hora</th>
+            <th>Quién</th>
+            <th>Tabla</th>
+            <th>Acción</th>
+            <th>Cambios</th>
+          </tr>
+        </thead>
+        <tbody id="historialTableBody"></tbody>
+      </table>
+      <p id="historialEmpty" class="muted hidden">Sin actividad registrada todavía.</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- MODAL NUEVA NOTA -->
+<div id="modalNuevaNota" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h3>Nueva nota informativa</h3>
+        <p class="muted small modal-subtitle">Registre primero la falta; la reincorporación y los documentos se controlan después desde el expediente.</p>
+      </div>
+      <button id="btnCerrarModal" class="btn-ghost">✕</button>
+    </div>
+    <form id="notaForm" class="modal-body">
+      <ol class="form-stepper" aria-label="Etapas para registrar una nota informativa">
+        <li class="is-current"><span>1</span><b>Efectivo</b></li>
+        <li><span>2</span><b>Falta</b></li>
+        <li><span>3</span><b>Sustento</b></li>
+        <li><span>4</span><b>Guardar</b></li>
+      </ol>
+      <p class="form-section-title"><span>1</span> Identificación del efectivo</p>
+      <div class="lookup-row">
+        <label class="grow">Buscar efectivo por CIP o DNI
+          <input type="text" id="lookupCipDni" placeholder="Ej. 400003 o 40000000" />
+        </label>
+        <button type="button" id="btnBuscarEfectivo" class="btn-secondary">Buscar</button>
+      </div>
+      <p id="lookupResult" class="muted small hidden"></p>
+
+      <div class="grid-2">
+        <label>Grado
+          <input type="text" id="fGrado" required />
+        </label>
+        <label>Código de infracción (opcional, se puede completar después)
+          <input type="text" id="fCodigoInfraccion" />
+        </label>
+      </div>
+      <p class="form-section-title"><span>2</span> Datos de la falta</p>
+      <div class="grid-2">
+        <label>Apellidos
+          <input type="text" id="fApellidos" required />
+        </label>
+        <label>Nombres
+          <input type="text" id="fNombres" required />
+        </label>
+      </div>
+      <p id="faltaAbiertaWarning" class="ai-box ai-box-warning hidden" role="alert"></p>
+      <div class="grid-2">
+        <label>Fecha de falta
+          <input type="date" id="fFechaFalta" required />
+        </label>
+        <label>N.º de nota de falta
+          <input type="text" id="fNumeroNotaFalta" required />
+        </label>
+      </div>
+      <label>Hora en que se constató la falta
+        <input type="time" id="fHoraFalta" />
+      </label>
+      <label>Oficial que constató
+        <input type="text" id="fOficialConstato" />
+      </label>
+      <label>Rol de servicio del <strong>día de la falta</strong> (PDF/imagen) — opcional
+        <input type="file" id="fArchivoRol" accept="application/pdf,image/*" />
+      </label>
+      <p id="rolAutoStatus" class="muted small hidden" role="alert"></p>
+      <label>Puesto / servicio según el rol
+        <input type="text" id="fPuestoRol" placeholder="Ej. PATRULLAJE A PIE - SECTOR 3 (lo completa la IA al subir el rol de ese día; verifíquelo)" />
+      </label>
+      <p class="form-section-title"><span>3</span> Sustento de la nota</p>
+      <label>Archivo de la nota (PDF/imagen)
+        <input type="file" id="fArchivoNota" accept="application/pdf,image/*" />
+      </label>
+      <p id="pdfAutoStatus" class="muted small hidden"></p>
+
+      <div id="multiplesEfectivos" class="hidden">
+        <p class="muted small">Efectivos adicionales detectados en el PDF. Desmarque los que no correspondan; se creará una nota informativa por cada uno marcado, con la misma fecha/N.º de nota/oficial.</p>
+        <div id="multiplesEfectivosList"></div>
+      </div>
+
+      <p id="notaFormError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarNota" class="btn-ghost">Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar nota</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL FALTAS EN LOTE -->
+<div id="modalFaltasLote" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Faltas desde PDF</h3>
+      <button id="btnCerrarModalFaltas" class="btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Archivo(s) de nota de falta (PDF) — puede seleccionar varios a la vez, uno por efectivo o uno grupal
+        <input type="file" id="flArchivo" accept="application/pdf" multiple />
+      </label>
+      <p class="muted small">Se crea una nota por cada efectivo detectado. El código de infracción se completa después, en cada expediente. No se vuelven a crear las faltas que ya estén registradas. Si un PDF es un «Continúa faltando» de una falta ya registrada (o incluida en este mismo lote), se agrega a «Continúan faltos» de ese expediente en vez de crear una nota nueva.</p>
+      <p id="flStatus" class="muted small hidden"></p>
+      <div id="flLista"></div>
+      <p id="flError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarFaltasLote" class="btn-ghost">Cancelar</button>
+        <button type="button" id="btnGuardarFaltasLote" class="btn-primary">Registrar faltas</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REINCORPORACION EN LOTE -->
+<div id="modalReincorporacionLote" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Reincorporación desde PDF</h3>
+      <button id="btnCerrarModalReinc" class="btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Archivo(s) de reincorporación (PDF) — puede seleccionar varios a la vez, uno por efectivo o uno grupal
+        <input type="file" id="rlArchivo" accept="application/pdf" multiple />
+      </label>
+      <p id="rlStatus" class="muted small hidden"></p>
+      <div id="rlLista"></div>
+      <p id="rlError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarReincLote" class="btn-ghost">Cancelar</button>
+        <button type="button" id="btnGuardarReincLote" class="btn-primary">Registrar reincorporación</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONTINUAN FALTOS EN LOTE -->
+<div id="modalContinuanFaltosLote" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Continúan faltos</h3>
+      <button id="btnCerrarModalContinuanFaltos" class="btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="muted small">Para la nota de "sigue faltando" de un día intermedio — de alguien que ya tiene un expediente registrado (abierto o ya cerrado con reincorporación; se busca por el N.º de la nota que aparece en el REF. de este PDF). No crea una nota nueva ni cambia la fecha de la falta original; solo deja constancia de esta confirmación (fecha, N.º de nota, quien pasó revista) para el Informe Administrativo si la ausencia llega a escalar.</p>
+      <label>Archivo(s) — puede seleccionar varios a la vez, uno por efectivo o uno grupal
+        <input type="file" id="cfArchivo" accept="application/pdf" multiple />
+      </label>
+      <p id="cfStatus" class="muted small hidden"></p>
+      <div id="cfLista"></div>
+      <p id="cfError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarContinuanFaltosLote" class="btn-ghost">Cancelar</button>
+        <button type="button" id="btnGuardarContinuanFaltosLote" class="btn-primary">Registrar seguimiento</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NUEVO EFECTIVO -->
+<div id="modalNuevoEfectivo" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Nuevo efectivo</h3>
+      <button id="btnCerrarModalEfectivo" class="btn-ghost">✕</button>
+    </div>
+    <form id="efectivoForm" class="modal-body">
+      <div class="grid-2">
+        <label>Grado
+          <input type="text" id="efGrado" required />
+        </label>
+        <label>CIP
+          <input type="text" id="efCip" inputmode="numeric" required />
+        </label>
+      </div>
+      <div class="grid-2">
+        <label>Apellidos y nombres
+          <input type="text" id="efApellidosNombres" required placeholder="APELLIDO APELLIDO, Nombres" />
+        </label>
+        <label>DNI
+          <input type="text" id="efDni" inputmode="numeric" required />
+        </label>
+      </div>
+      <p id="efectivoFormError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarEfectivo" class="btn-ghost">Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar efectivo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL DIRECTIVA (nueva / editar) -->
+<div id="modalDirectiva" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="directivaModalTitulo">Nueva directiva</h3>
+      <button id="btnCerrarModalDirectiva" class="btn-ghost">✕</button>
+    </div>
+    <form id="directivaForm" class="modal-body">
+      <input type="hidden" id="dvId" />
+      <label>Título
+        <input type="text" id="dvTitulo" required placeholder="Ej. Requisitos de descansos médicos particulares" />
+      </label>
+      <label>N.º de documento (opcional)
+        <input type="text" id="dvNumero" placeholder="Ej. Directiva N.° 01-2024-DIRNOS-PNP" />
+      </label>
+      <label>Archivo (PDF o imagen, opcional — se intenta extraer el texto automáticamente)
+        <input type="file" id="dvArchivo" accept="application/pdf,image/*" />
+      </label>
+      <p id="dvArchivoStatus" class="muted small hidden"></p>
+      <label>Contenido (el texto exacto que usará la IA — revíselo aunque lo haya extraído de un archivo)
+        <textarea id="dvContenido" rows="10" required placeholder="Pegue aquí el texto de la directiva, o suba un archivo arriba para extraerlo automáticamente y luego revíselo."></textarea>
+      </label>
+      <label class="checkbox-row"><input type="checkbox" id="dvActiva" checked /> Activa (la IA la usa como contexto)</label>
+      <p id="directivaError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarDirectiva" class="btn-ghost">Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar directiva</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL EDITAR CONTENIDO DE DOCUMENTO INSTITUCIONAL (admin) -->
+<div id="modalDocumentoInstitucional" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="documentoInstitucionalModalTitulo">Editar contenido</h3>
+      <button id="btnCerrarModalDocumentoInstitucional" class="btn-ghost">✕</button>
+    </div>
+    <form id="documentoInstitucionalForm" class="modal-body">
+      <input type="hidden" id="diId" />
+      <p class="muted small">Al guardar, este documento pasa a una versión nueva y las firmas anteriores quedan registradas contra el texto que realmente firmaron — cada firmante deberá volver a firmar la versión nueva.</p>
+      <label>Contenido
+        <textarea id="diContenido" rows="14" required></textarea>
+      </label>
+      <p id="documentoInstitucionalError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarDocumentoInstitucional" class="btn-ghost">Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar nueva versión</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ASISTENTE FLOTANTE - DESACTIVADO
+     Cada pregunta llama a la IA y se cobra, asi que el lanzador esta oculto. El
+     asistente sigue entero (widget, historial y funcion asistente-md): para
+     volver a activarlo basta quitar la clase "hidden" de este boton, que es la
+     unica forma de abrirlo. -->
+<button id="btnAbrirAsistente" class="asistente-fab hidden" title="Asistente de consulta">
+  <img src="assets/mascota-asistente.jpg" alt="" />
+</button>
+<div id="asistenteWidget" class="asistente-widget hidden">
+  <div class="asistente-header">
+    <img class="asistente-avatar" src="assets/mascota-asistente.jpg" alt="" />
+    <span>Asistente de consulta</span>
+    <button id="btnCerrarAsistente" class="btn-ghost">✕</button>
+  </div>
+  <div id="asistenteMensajes" class="asistente-mensajes"></div>
+  <form id="asistenteForm" class="asistente-form">
+    <input type="text" id="asistenteInput" placeholder="Escriba su pregunta..." autocomplete="off" />
+    <button type="submit" class="btn-primary">➤</button>
+  </form>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+
+<!-- REVISION PREVIA A GENERAR UN DOCUMENTO -->
+<div id="modalRevision" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h3 id="revisionTitulo">Revisar antes de generar</h3>
+        <p class="muted small modal-subtitle">Qué falta corregir y qué datos exactos se insertarán en el documento.</p>
+      </div>
+      <button id="btnCerrarRevision" class="btn-ghost">✕</button>
+    </div>
+    <div class="modal-body" id="revisionContenido"></div>
+  </div>
+</div>
+
+<!-- PALETA DE BUSQUEDA GLOBAL (Ctrl + K) -->
+<div id="paletaBuscar" class="modal-overlay palette-overlay hidden">
+  <div class="palette">
+    <div class="palette-input-row">
+      <span class="palette-icon"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+      <input type="text" id="paletaInput" placeholder="Nombre, apellido, CIP o DNI…" autocomplete="off" spellcheck="false" />
+      <button type="button" id="paletaCerrar" class="btn-ghost">Esc</button>
+    </div>
+    <div id="paletaResultados" class="palette-results"></div>
+    <p class="palette-foot muted small">Escriba un apellido para ver a todas las personas que lo tienen. <kbd>Ctrl</kbd>+<kbd>K</kbd> para abrir · <kbd>Esc</kbd> para cerrar</p>
+  </div>
+</div>
+
+<div id="modalAviso" class="modal-overlay hidden">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="avisoTitulo">
+    <div class="modal-header">
+      <h3 id="avisoTitulo">Aviso de privacidad</h3>
+      <button type="button" id="btnCerrarAviso" class="btn-ghost" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body aviso-privacidad">
+      <p class="muted small">Faltos es una herramienta independiente: no pertenece a la Policía Nacional del Perú ni a ninguna entidad pública, y no sustituye ningún canal oficial. Versión 3 · 28/09/2026.</p>
+      <h4>Quién trata sus datos</h4>
+      <p>Hans Brandon Hidalgo Ferrari, responsable del tratamiento. Correo de contacto para consultas y para ejercer sus derechos: <strong>hanshidalgo98@gmail.com</strong>.</p>
+      <h4>Qué datos y para qué</h4>
+      <p>Del personal que usa el sistema: nombres, grado, CIP, DNI y teléfono. De las personas investigadas: nombres, grado, CIP y los datos del procedimiento disciplinario por infracciones leves (notas informativas, descargos, órdenes de sanción y su cumplimiento). La finalidad es organizar los expedientes del procedimiento disciplinario regulado por la Ley N.° 30714 y su Reglamento, para las personas autorizadas a tratarlos. No se usan para otra finalidad.</p>
+      <h4>Con quién se comparten y fuera del Perú</h4>
+      <ul>
+        <li><strong>Supabase</strong> (base de datos y archivos, servidores en Brasil).</li>
+        <li><strong>Google</strong> (copia de respaldo en Drive y, si usted lo elige, el ingreso con su cuenta de Google).</li>
+        <li><strong>Anthropic</strong> (asistencia de inteligencia artificial, Estados Unidos): solo recibe lo necesario para cada tarea, el resumen ejecutivo va sin nombres, y ningún resultado se guarda ni se notifica sin que un funcionario lo revise y confirme.</li>
+      </ul>
+      <h4>Cuánto tiempo</h4>
+      <p>Cinco (5) años desde el cierre del expediente; vencido el plazo se anonimizan o eliminan. Los registros de acceso y las constancias de aceptación se conservan mientras exista obligación legal de hacerlo.</p>
+      <h4>Sus derechos</h4>
+      <p>Puede pedir acceso, rectificación, cancelación u oposición escribiendo a <strong>hanshidalgo98@gmail.com</strong>. También puede pedir la eliminación de su cuenta en <a href="eliminar-cuenta.html">esta página</a>; se ejecuta dentro de los diez (10) días hábiles siguientes. Si no obtiene respuesta, puede acudir a la Autoridad Nacional de Protección de Datos Personales.</p>
+      <h4>Cómo se protegen</h4>
+      <p>Cada oficial solo ve los expedientes donde figura como oficial que constató; el padrón completo solo lo ve el administrador; el acceso exige clave propia y los cambios quedan en un historial de auditoría.</p>
+    </div>
+  </div>
+</div>
+
+<div id="modalCambiarClave" class="modal-overlay hidden">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cambiarClaveTitulo">
+    <div class="modal-header">
+      <h3 id="cambiarClaveTitulo">Cambiar clave</h3>
+      <button type="button" id="btnCerrarCambiarClave" class="btn-ghost hidden">✕</button>
+    </div>
+    <form id="cambiarClaveForm" class="modal-body">
+      <p id="cambiarClaveAviso" class="ai-box ai-box-warning hidden">La clave con la que ingresó es temporal o fácil de adivinar por otras personas. Elija una clave nueva para continuar.</p>
+      <label>Clave nueva (mínimo 8 caracteres, con al menos una letra)
+        <input type="password" id="ccNueva" required minlength="8" autocomplete="new-password" />
+      </label>
+      <label>Repita la clave nueva
+        <input type="password" id="ccRepite" required minlength="8" autocomplete="new-password" />
+      </label>
+      <p id="ccError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnSalirCambiarClave" class="btn-ghost">Cerrar sesión</button>
+        <button type="submit" id="btnGuardarClave" class="btn-primary">Guardar clave nueva</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

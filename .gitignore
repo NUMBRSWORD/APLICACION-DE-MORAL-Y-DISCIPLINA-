@@ -19,3 +19,28 @@ local.properties
 .private/
 # Configuración local de Firebase (cada instalación puede tener un proyecto distinto).
 /app/google-services.json
+
+# --- Del repositorio web (moral-y-disciplina) ---
+.devserver.ps1
+devserver.cjs
+node_modules/
+preview/
+
+# Skills de IA instalados con `npx skills add` / `npx impeccable install`
+# (herramientas locales del agente, no código de la app; workflows/ de
+# GitHub Pages se mantiene fuera de esto)
+.agents/
+.github/agents/
+.github/hooks/
+.github/skills/
+skills-lock.json
+
+# Documentos de ejemplo con datos reales de personal (nombres, CIP): NUNCA al repo,
+# que es público. Se guardan fuera de la carpeta del proyecto.
+plantillas/*_ejemplo.docx
+
+# Secretos y volcados del backend: nunca versionar
+.env
+.env.*
+supabase/.temp/
+supabase/.branches/

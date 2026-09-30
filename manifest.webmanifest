@@ -1,0 +1,15 @@
+{
+  "name": "Faltos — Expedientes disciplinarios",
+  "short_name": "Faltos",
+  "description": "Herramienta independiente para organizar expedientes por infracciones Leves (Ley N.° 30714): notas, imputación, descargos y órdenes de sanción.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1720",
+  "theme_color": "#0f1720",
+  "lang": "es-PE",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

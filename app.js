@@ -1,0 +1,5517 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
+import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.6.82/build/pdf.mjs";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY } from "./config.js";
+import saveAs from "https://esm.sh/file-saver@2.0.5";
+import { renderizarImputacionDocx, construirDatosImputacion, puedeGenerarImputacion, buscarOficialConstato, tokens } from "./lib/imputacion.js";
+import { renderizarActaNoDescargoDocx, construirDatosActaNoDescargo, puedeGenerarActaNoDescargo, plazoDescargoVencido, fechaLimiteDescargo } from "./lib/actaNoDescargo.js";
+import { renderizarOrdenSancionDocx, construirDatosOrdenSancion, puedeGenerarOrdenSancion, opcionesTercio, buildCasoConcreto, analisisSinDescargoDefault } from "./lib/ordenSancion.js";
+import { renderizarArchivoLeveDocx, puedeGenerarArchivoLeve } from "./lib/archivoLeve.js";
+import { renderizarInformeAdministrativoDocx, puedeGenerarInformeAdministrativo, diasDeAusencia, INFRACCIONES_GRAVES } from "./lib/informeAdministrativo.js";
+import { cargarDocxDeps } from "./lib/docxDeps.js";
+import { getInfraccion, normalizarCodigoInfraccion } from "./lib/anexoI.js";
+import { listarDirectivas, directivasParaIA, guardarDirectiva, eliminarDirectiva, subirArchivoDirectiva } from "./lib/directivas.js";
+import { listarDocumentosInstitucionales, listarFirmasDocumentos, firmarDocumento, actualizarContenidoDocumentoInstitucional } from "./lib/cumplimiento.js";
+import { horasAusente, sugerirCodigoInfraccion, nombreCompletoVisible, limpiarNombreVisible } from "./lib/utils.js";
+import { clasificarNotaEntrante, entradasSeguimiento } from "./lib/seguimiento.js";
+import { bloqueReincorporados, personalPNPEnTexto, completarCandidatos, buscarReincorporada, mismoEfectivo } from "./lib/nombresNota.js";
+import { PERIODO_ACUMULADO, agruparPersonas, buscarPersonas, formatearDuracionHoras, resumenDelMes, resumenPersona } from "./lib/personas.js";
+import { restaurarNombres, seudonimizarInvestigados } from "./lib/privacidad.js";
+import { fechaLima, hoyLima, horaLima } from "./lib/fechas.js";
+import { DIAS_MINIMOS, INDETERMINADO, INICIO_INFORME, REMUNERACION, cumpleMinimo, descuentoDeNotas, formatearSoles, textoDescuento, textoDias } from "./lib/descuento.js";
+import { esClaveInicial, validarClaveNueva } from "./lib/acceso.js";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.6.82/build/pdf.worker.mjs";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const state = {
+  session: null,
+  role: null,
+  email: null,
+  cip: null,
+  notas: [],
+  efectivos: [],
+  currentNotaId: null,
+  directivas: [],
+  cumplimientoDocs: [],
+  cumplimientoFirmas: [],
+  expedientesRemitidos: [],
+  rolesServicio: [],
+  asistenteHistorial: [],
+};
+
+// Infracciones que este sistema tramita con Orden de Sanción (por ahora,
+// solo L21 y L24): catálogo compacto que se le pasa al asistente flotante
+// como contexto, junto con las directivas internas cargadas.
+const CATALOGO_ASISTENTE = ["L21", "L24"]
+  .map((codigo) => ({ codigo, ...(getInfraccion(codigo) || {}) }));
+
+const $ = (id) => document.getElementById(id);
+
+// Todo <button> sin type explícito dentro de un <form> actúa como "submit" y
+// puede enviar el formulario sin querer. Los que deben enviar ya declaran
+// type="submit"; al resto se le fija type="button".
+document.querySelectorAll("button:not([type])").forEach((b) => b.setAttribute("type", "button"));
+
+// ---------- Iconos SVG (trazo estilo Lucide, heredan color/tamaño del texto) ----------
+const ICONOS = {
+  buscar: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
+  ia: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+  descargar: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  nube: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+  firmar: '<path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  flecha: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  reloj: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  alerta: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  estrella: '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.28 21.28a.53.53 0 0 1-.77-.56l.881-5.139a2.123 2.123 0 0 0-.611-1.879L2.043 9.865a.53.53 0 0 1 .294-.904l5.166-.755a2.122 2.122 0 0 0 1.597-1.16z"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  calendario: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  balanza: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
+  credencial: '<path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/><rect x="2" y="5" width="20" height="14" rx="2"/>',
+  carpeta: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  luna: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+};
+function svgIco(nombre) {
+  const d = ICONOS[nombre];
+  if (!d) return "";
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+}
+
+// ---------- PWA: instalable en el celular ----------
+// Registra el service worker para que la app se pueda "Agregar a pantalla de
+// inicio" y abra como aplicación, tolerando conexión intermitente. No cambia
+// nada del flujo web normal.
+if ("serviceWorker" in navigator) {
+  // Una pestaña abierta NO recarga sola el código nuevo: seguía corriendo la
+  // versión con la que se abrió, aunque ya se hubiera publicado un arreglo
+  // (así se veía "todo igual" tras una actualización). Cuando un service worker
+  // nuevo toma el control de una pestaña que YA lo tenía, se avisa que hay que
+  // recargar. En la primera visita (sin controlador previo) no se avisa nada.
+  const teniaControlador = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (teniaControlador) toast("Se actualizó la aplicación. Guarde lo que esté haciendo y presione Ctrl + F5 para cargar la versión nueva.", "ok", 120000);
+  });
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js", { scope: "./" })
+      .catch((e) => console.warn("No se pudo registrar el service worker:", e));
+  });
+}
+
+// ---------- Alertas push al celular ----------
+// El oficial que constató la falta (el que tramita el expediente) puede
+// activar avisos en su celular. Se envían al generarse la Orden de Sanción
+// (y, cuando se configure el cron, también un repaso diario). Cada
+// suscripción queda atada a su CIP, así solo recibe SUS expedientes.
+let avisoInstalacionDiferido = null;
+let registroSW = null;
+
+function mostrarEstadoMovil(texto) {
+  const el = $("estadoAlertasMovil");
+  if (el) el.textContent = texto;
+}
+
+function vapidABytes(base64) {
+  const relleno = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + relleno).replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64);
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
+async function obtenerRegistroSW() {
+  if (!("serviceWorker" in navigator)) throw new Error("Este navegador no admite la aplicación instalable.");
+  if (!registroSW) registroSW = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+  return registroSW;
+}
+
+// El panel de alertas se colapsa a una línea cuando no hay nada que hacer
+// (alertas ya activas, o el equipo no las soporta), para que el inicio muestre
+// primero el trabajo pendiente y no un aviso de configuración permanente.
+function compactarPanelMovil(compacto) {
+  $("panelMovil")?.classList.toggle("is-compacto", compacto);
+}
+
+async function prepararAlertasMovil() {
+  const boton = $("btnActivarAlertas");
+  if (!boton) return;
+  if (!state.session || !state.cip) {
+    boton.disabled = true;
+    mostrarEstadoMovil("Ingrese con su CIP para recibir solamente sus alertas.");
+    compactarPanelMovil(true);
+    return;
+  }
+  if (!("PushManager" in window) || !("Notification" in window)) {
+    boton.disabled = true;
+    mostrarEstadoMovil("Este navegador no permite alertas. Use Chrome en Android (o instale la app en iPhone 16.4+).");
+    compactarPanelMovil(true);
+    return;
+  }
+  try {
+    const registro = await obtenerRegistroSW();
+    if (Notification.permission === "denied") {
+      boton.disabled = true;
+      mostrarEstadoMovil("Las alertas están bloqueadas en este celular. Habilítelas desde los ajustes del navegador.");
+      compactarPanelMovil(true);
+      return;
+    }
+    const suscripcion = await registro.pushManager.getSubscription();
+    if (suscripcion && Notification.permission === "granted") {
+      boton.disabled = true;
+      mostrarEstadoMovil("✓ Alertas activas para su CIP en este celular.");
+      compactarPanelMovil(true);
+    } else {
+      boton.disabled = false;
+      mostrarEstadoMovil("Instale la aplicación y active las alertas para recibir avisos de sus expedientes.");
+      compactarPanelMovil(false);
+    }
+  } catch (error) {
+    console.error(error);
+    mostrarEstadoMovil("No se pudieron preparar las alertas en este dispositivo.");
+    compactarPanelMovil(false);
+  }
+}
+
+async function activarAlertasMovil() {
+  const boton = $("btnActivarAlertas");
+  if (!state.cip || !state.session) { mostrarEstadoMovil("Ingrese con su CIP para activar las alertas."); return; }
+  ocuparBoton(boton, true, "Activando...");
+  let exito = false;
+  try {
+    const permiso = await Notification.requestPermission();
+    if (permiso !== "granted") { mostrarEstadoMovil("No se activaron las alertas: debe permitirlas en el navegador."); return; }
+    const registro = await obtenerRegistroSW();
+    const suscripcion = await registro.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: vapidABytes(VAPID_PUBLIC_KEY),
+    });
+    const datos = suscripcion.toJSON();
+    const { error } = await supabase.from("suscripciones_movil").upsert({
+      user_id: state.session.user.id,
+      cip: state.cip,
+      endpoint: datos.endpoint,
+      p256dh: datos.keys?.p256dh,
+      auth: datos.keys?.auth,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "endpoint" });
+    if (error) throw error;
+    mostrarEstadoMovil("✓ Alertas activas para su CIP en este celular.");
+    exito = true;
+  } catch (error) {
+    console.error(error);
+    mostrarEstadoMovil("No se pudieron activar las alertas. Intente de nuevo en unos minutos.");
+  } finally {
+    ocuparBoton(boton, false);
+    if (exito) { boton.disabled = true; compactarPanelMovil(true); }
+  }
+}
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  avisoInstalacionDiferido = event;
+  $("btnInstalarApp")?.classList.remove("hidden");
+});
+$("btnInstalarApp")?.addEventListener("click", async () => {
+  if (!avisoInstalacionDiferido) return;
+  avisoInstalacionDiferido.prompt();
+  await avisoInstalacionDiferido.userChoice;
+  avisoInstalacionDiferido = null;
+  $("btnInstalarApp")?.classList.add("hidden");
+});
+$("btnActivarAlertas")?.addEventListener("click", activarAlertasMovil);
+
+// Dispara la alerta al oficial cuando se acaba de generar la Orden de Sanción.
+async function enviarAlertaSancionPendiente(notaId) {
+  try {
+    const { error } = await supabase.functions.invoke("notificar-sancion-pendiente", { body: { notaId } });
+    if (error) throw error;
+  } catch (error) {
+    console.warn("No se pudo enviar la alerta móvil:", error);
+  }
+}
+
+// ---------- Avisos flotantes ----------
+// Reemplaza los `console.error(...)` mudos de las cargas: si algo falla (red,
+// permisos, sesión vencida) el oficial ve un aviso en pantalla en vez de creer
+// que simplemente "no hay casos".
+function toast(mensaje, tipo = "error", ms = 6000) {
+  const cont = $("toasts");
+  if (!cont) { console[tipo === "error" ? "error" : "log"](mensaje); return; }
+  const el = document.createElement("div");
+  el.className = `toast is-${tipo === "ok" ? "ok" : tipo === "info" ? "info" : "error"}`;
+  el.textContent = mensaje;
+  cont.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = "0";
+    setTimeout(() => el.remove(), 220);
+  }, ms);
+}
+
+// Estado "trabajando" uniforme para cualquier botón: lo deshabilita, le pone el
+// spinner (.is-busy) y opcionalmente cambia el texto, recordando el original.
+function ocuparBoton(btn, ocupado, textoOcupado) {
+  if (!btn) return;
+  if (ocupado) {
+    if (btn.dataset.htmlPrevio === undefined) btn.dataset.htmlPrevio = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add("is-busy");
+    if (textoOcupado) btn.textContent = textoOcupado;
+  } else {
+    btn.disabled = false;
+    btn.classList.remove("is-busy");
+    if (btn.dataset.htmlPrevio !== undefined) { btn.innerHTML = btn.dataset.htmlPrevio; delete btn.dataset.htmlPrevio; }
+  }
+}
+
+// Cuando una Edge Function responde con un status no-2xx, supabase-js entrega
+// un FunctionsHttpError genérico ("non-2xx status code") y deja el detalle real
+// en el cuerpo de la respuesta (error.context). Esto lo extrae para mostrarlo.
+async function mensajeErrorFuncion(error) {
+  const generico = error?.message || String(error || "error desconocido");
+  try {
+    const resp = error?.context;
+    if (resp && typeof resp.clone === "function") {
+      const cuerpo = await resp.clone().json();
+      if (cuerpo?.error) return String(cuerpo.error);
+    }
+  } catch (_) { /* el cuerpo no era JSON legible */ }
+  return generico;
+}
+
+// ---------- Borradores locales (autoguardado) ----------
+// Los textos largos de la Orden de Sanción (análisis y resumen del descargo)
+// se guardan en el navegador mientras se escriben, para no perderlos si se
+// navega, se recarga o expira la sesión antes de "Guardar y descargar". Es
+// solo del navegador de quien redacta: no toca la base ni a otros usuarios.
+const BORRADOR_PREFIJO = "borrador:";
+function borradorKey(notaId, campo) { return `${BORRADOR_PREFIJO}${notaId}:${campo}`; }
+
+function guardarBorrador(notaId, campo, texto) {
+  try {
+    localStorage.setItem(borradorKey(notaId, campo), JSON.stringify({ texto, ts: Date.now() }));
+  } catch (_) { /* almacenamiento lleno o bloqueado: se ignora */ }
+}
+function leerBorrador(notaId, campo) {
+  try {
+    const raw = localStorage.getItem(borradorKey(notaId, campo));
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return obj && typeof obj.texto === "string" ? obj : null;
+  } catch (_) { return null; }
+}
+function borrarBorrador(notaId, campo) {
+  try { localStorage.removeItem(borradorKey(notaId, campo)); } catch (_) {}
+}
+function limpiarBorradoresNota(notaId) {
+  ["analisis", "descargo"].forEach((c) => borrarBorrador(notaId, c));
+}
+
+function tiempoRelativo(ts) {
+  const seg = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (seg < 10) return "hace un momento";
+  if (seg < 60) return `hace ${seg} s`;
+  const min = Math.round(seg / 60);
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  return `hace ${Math.round(h / 24)} d`;
+}
+
+let debounceBorrador = {};
+// Conecta el autoguardado a las dos áreas de texto de la Orden de Sanción y,
+// si hay un borrador local distinto de lo que se acaba de cargar, ofrece
+// restaurarlo (sin pisar nada automáticamente).
+function activarAutoguardadoSancion(nota) {
+  const campos = [
+    { campo: "analisis", el: $("sSancionAnalisis"), etiqueta: "Análisis y evaluación" },
+    { campo: "descargo", el: $("sSancionDescargo"), etiqueta: "Resumen del descargo" },
+  ];
+  const form = $("sancionForm");
+  if (!form) return;
+
+  for (const { campo, el, etiqueta } of campos) {
+    if (!el) continue;
+    const estado = document.createElement("p");
+    estado.className = "campo-guardado";
+    estado.id = `guardado-${campo}`;
+    el.insertAdjacentElement("afterend", estado);
+
+    el.addEventListener("input", () => {
+      clearTimeout(debounceBorrador[campo]);
+      debounceBorrador[campo] = setTimeout(() => {
+        guardarBorrador(nota.id, campo, el.value);
+        estado.textContent = `Borrador guardado ${tiempoRelativo(Date.now())}`;
+      }, 700);
+    });
+
+    const b = leerBorrador(nota.id, campo);
+    if (b && b.texto.trim() && b.texto.trim() !== (el.value || "").trim()) {
+      const banner = document.createElement("div");
+      banner.className = "borrador-banner";
+      banner.innerHTML = `<span class="grow">Hay un borrador local de «${escapeHtml(etiqueta)}» sin guardar (${escapeHtml(tiempoRelativo(b.ts))}).</span>`;
+      const restaurar = document.createElement("button");
+      restaurar.type = "button";
+      restaurar.className = "btn-secondary";
+      restaurar.textContent = "Restaurar";
+      restaurar.addEventListener("click", () => {
+        el.value = b.texto;
+        if (campo === "analisis") el.dataset.autofilled = "false";
+        banner.remove();
+        estado.textContent = "Borrador restaurado.";
+      });
+      const descartar = document.createElement("button");
+      descartar.type = "button";
+      descartar.className = "btn-ghost";
+      descartar.textContent = "Descartar";
+      descartar.addEventListener("click", () => { borrarBorrador(nota.id, campo); banner.remove(); });
+      banner.append(restaurar, descartar);
+      form.prepend(banner);
+    }
+  }
+}
+
+// ---------- Tema claro/oscuro ----------
+// El oscuro sigue siendo el predeterminado (nadie ve un cambio de
+// apariencia sin pedirlo); el script inline en <head> ya aplicó
+// data-theme="light" antes de este punto si esa era la preferencia
+// guardada, así que aquí solo hace falta sincronizar el ícono y el clic.
+function actualizarIconoTema() {
+  const claro = document.documentElement.getAttribute("data-theme") === "light";
+  $("btnTemaToggle").innerHTML = svgIco(claro ? "sol" : "luna");
+  const texto = claro ? "Cambiar a tema oscuro" : "Cambiar a tema claro";
+  $("btnTemaToggle").title = texto;
+  $("btnTemaToggle").setAttribute("aria-label", texto);
+}
+actualizarIconoTema();
+$("btnTemaToggle").addEventListener("click", () => {
+  const claroAhora = document.documentElement.getAttribute("data-theme") === "light";
+  if (claroAhora) {
+    document.documentElement.removeAttribute("data-theme");
+    localStorage.setItem("tema", "dark");
+  } else {
+    document.documentElement.setAttribute("data-theme", "light");
+    localStorage.setItem("tema", "light");
+  }
+  actualizarIconoTema();
+});
+
+// ---------- View switching ----------
+function showView(id) {
+  document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
+  $(id).classList.remove("hidden");
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+  const map = { "view-dashboard": "dashboard", "view-seguimiento": "seguimiento", "view-cumplimiento": "cumplimiento", "view-efectivos": "efectivos", "view-roles": "roles", "view-directivas": "directivas", "view-agenda": "agenda", "view-documentos": "documentos", "view-recepcion": "recepcion", "view-panel": "panel", "view-historial": "historial" };
+  if (map[id]) {
+    document.querySelector(`.tab-btn[data-view="${map[id]}"]`)?.classList.add("active");
+  }
+}
+
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const target = btn.dataset.view;
+    if (target === "dashboard") { showView("view-dashboard"); loadNotas(); }
+    if (target === "seguimiento") { showView("view-seguimiento"); loadNotas(); }
+    if (target === "cumplimiento") { showView("view-cumplimiento"); loadCumplimientoView(); }
+    if (target === "efectivos") { showView("view-efectivos"); loadEfectivos(); }
+    if (target === "roles") { showView("view-roles"); loadRolesServicio(); }
+    if (target === "directivas") { showView("view-directivas"); loadDirectivasView(); }
+    if (target === "agenda") { showView("view-agenda"); renderAgendaNotas(); }
+    if (target === "documentos") { showView("view-documentos"); loadDocumentosGenerados(); }
+    if (target === "recepcion") { showView("view-recepcion"); loadNotas().then(loadExpedientesRemitidos); }
+    if (target === "panel") { showView("view-panel"); renderPanel(); }
+    if (target === "historial") { showView("view-historial"); loadHistorial(); }
+  });
+});
+
+$("btnVolverDashboard").addEventListener("click", () => { showView("view-dashboard"); loadNotas(); });
+
+// ---------- Paleta de búsqueda global (Ctrl + K) ----------
+// Salta rápido a un expediente sin recorrer pestañas. Trabaja sobre lo ya
+// cargado en memoria (state.notas ya viene filtrado por RLS a lo que este
+// usuario puede ver), así que no dispara consultas nuevas.
+// El padrón de personal (sección "Personas", con CIP/DNI de todos) SOLO se
+// muestra al administrador; el oficial solo ve sus propios expedientes. La RLS
+// de la tabla `efectivos` además impide que un no-admin reciba el padrón.
+const paleta = {
+  overlay: $("paletaBuscar"),
+  input: $("paletaInput"),
+  resultados: $("paletaResultados"),
+  activo: -1,
+  items: [],
+};
+
+function abrirPaleta() {
+  if (!state.session) return;
+  // El padrón de personal (con DNI/CIP de todos) solo lo consulta el admin;
+  // el oficial solo busca entre SUS expedientes.
+  paleta.input.placeholder = state.role === "admin"
+    ? "Nombre, apellido, CIP o DNI…"
+    : "Nombre o N.º de nota de sus expedientes…";
+  paleta.overlay.classList.remove("hidden");
+  paleta.input.value = "";
+  renderPaleta("");
+  paleta.input.focus();
+}
+
+function cerrarPaleta() {
+  paleta.overlay.classList.add("hidden");
+}
+
+function coincidePorTokens(consultaTokens, textoTokens) {
+  return consultaTokens.every((qt) => textoTokens.some((t) => t.startsWith(qt)));
+}
+
+function renderPaleta(raw) {
+  const q = (raw || "").trim();
+  const qTokens = tokens(q);
+  const qDigits = q.replace(/\D+/g, "");
+  paleta.resultados.innerHTML = "";
+  paleta.items = [];
+  paleta.activo = -1;
+
+  const esAdmin = state.role === "admin";
+
+  if (!qTokens.length && qDigits.length < 3) {
+    paleta.resultados.innerHTML = `<p class="palette-empty">${esAdmin ? "Escriba un nombre, apellido, CIP o DNI." : "Escriba un nombre o el N.º de nota de uno de sus expedientes."}</p>`;
+    return;
+  }
+
+  // El padrón de personal (Personas) solo lo consulta el administrador. El
+  // oficial solo busca entre sus expedientes.
+  const efectivos = !esAdmin ? [] : (state.efectivos || []).filter((ef) => {
+    const textoTokens = tokens(`${ef.apellidos_nombres || ""} ${ef.grado || ""}`);
+    const porNombre = qTokens.length && coincidePorTokens(qTokens, textoTokens);
+    const porDoc = qDigits.length >= 3 &&
+      [`${ef.cip || ""}`, `${ef.dni || ""}`].some((d) => d.includes(qDigits));
+    return porNombre || porDoc;
+  }).sort((a, b) => (a.apellidos_nombres || "").localeCompare(b.apellidos_nombres || ""));
+
+  const expedientes = (state.notas || []).filter((n) => {
+    if (!qTokens.length) return false;
+    const textoTokens = tokens(`${n.apellidos || ""} ${n.nombres || ""} ${n.grado || ""} ${n.codigo_infraccion || ""} ${n.numero_nota_falta || ""}`);
+    return coincidePorTokens(qTokens, textoTokens);
+  });
+
+  const cont = document.createDocumentFragment();
+
+  if (efectivos.length) {
+    const h = document.createElement("div");
+    h.className = "palette-group-title";
+    h.textContent = `Personas (${efectivos.length})`;
+    cont.appendChild(h);
+    const MAX = 40;
+    for (const ef of efectivos.slice(0, MAX)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "palette-item";
+      b.innerHTML = `<span class="pi-nombre">${escapeHtml(ef.grado || "")} ${escapeHtml(limpiarNombreVisible(ef.apellidos_nombres || ""))}</span>` +
+        `<span class="pi-meta">CIP ${escapeHtml(ef.cip || "—")} · DNI ${escapeHtml(ef.dni || "—")}</span>`;
+      b.addEventListener("click", () => copiarAlPortapapeles(ef.cip || "", b));
+      cont.appendChild(b);
+      paleta.items.push(b);
+    }
+    if (efectivos.length > MAX) {
+      const p = document.createElement("p");
+      p.className = "palette-empty";
+      p.textContent = `y ${efectivos.length - MAX} más — afine la búsqueda`;
+      cont.appendChild(p);
+    }
+  }
+
+  if (expedientes.length) {
+    const h = document.createElement("div");
+    h.className = "palette-group-title";
+    h.textContent = `Expedientes (${expedientes.length})`;
+    cont.appendChild(h);
+    for (const n of expedientes.slice(0, 20)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "palette-item";
+      b.innerHTML = `<span class="pi-nombre">${escapeHtml(nombreInvestigadoVisible(n, true))}</span>` +
+        `<span class="pi-meta">${escapeHtml(n.codigo_infraccion || "sin código")} · falta ${formatDate(n.fecha_falta)}</span>`;
+      b.addEventListener("click", () => { cerrarPaleta(); openNotaDetail(n.id); });
+      cont.appendChild(b);
+      paleta.items.push(b);
+    }
+  }
+
+  if (!efectivos.length && !expedientes.length) {
+    paleta.resultados.innerHTML = `<p class="palette-empty">Sin coincidencias para «${escapeHtml(q)}».</p>`;
+    return;
+  }
+  paleta.resultados.appendChild(cont);
+}
+
+function copiarAlPortapapeles(texto, btnEl) {
+  if (!texto) return;
+  navigator.clipboard?.writeText(texto).then(() => {
+    const meta = btnEl.querySelector(".pi-meta");
+    if (!meta) return;
+    const original = meta.textContent;
+    meta.textContent = "CIP copiado ✓";
+    setTimeout(() => { meta.textContent = original; }, 1200);
+  }).catch(() => {});
+}
+
+function moverActivo(delta) {
+  if (!paleta.items.length) return;
+  paleta.items[paleta.activo]?.classList.remove("is-active");
+  paleta.activo = (paleta.activo + delta + paleta.items.length) % paleta.items.length;
+  const el = paleta.items[paleta.activo];
+  el.classList.add("is-active");
+  el.scrollIntoView({ block: "nearest" });
+}
+
+$("btnPaletaBuscar").addEventListener("click", abrirPaleta);
+$("paletaCerrar").addEventListener("click", cerrarPaleta);
+paleta.overlay.addEventListener("click", (e) => { if (e.target === paleta.overlay) cerrarPaleta(); });
+paleta.input.addEventListener("input", (e) => renderPaleta(e.target.value));
+paleta.input.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") { e.preventDefault(); moverActivo(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); moverActivo(-1); }
+  else if (e.key === "Enter") { e.preventDefault(); paleta.items[paleta.activo]?.click(); }
+});
+
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    if (paleta.overlay.classList.contains("hidden")) abrirPaleta(); else cerrarPaleta();
+  } else if (e.key === "Escape" && !paleta.overlay.classList.contains("hidden")) {
+    cerrarPaleta();
+  }
+});
+
+// ---------- Auth ----------
+async function loadProfile(userId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("email, role")
+    .eq("id", userId)
+    .single();
+  if (error) { console.error(error); return; }
+  state.role = data.role;
+  state.email = data.email;
+  // Los oficiales inician sesión con "{cip}@moralydisciplina.local"; de ahí se
+  // saca el CIP para saber, más adelante, cuáles notas le corresponden (en las
+  // que él figura como oficial que constató).
+  state.cip = (state.email || "").split("@")[0];
+  // El correo interno "{cip}@moralydisciplina.local" no se muestra tal cual:
+  // en la barra basta el CIP.
+  const correoInterno = /@moralydisciplina\.local$/i.test(state.email || "");
+  $("userEmail").textContent = correoInterno ? `CIP ${state.cip}` : (state.email || "");
+  $("userRole").textContent = state.role;
+  document.querySelectorAll(".admin-only").forEach((el) => {
+    el.classList.toggle("hidden", state.role !== "admin");
+  });
+}
+
+// Segundo factor: si la cuenta tiene token activado en la app Faltos, la sesión no
+// sirve hasta escribir el código de 6 dígitos. Quien no tenga token entra como siempre.
+async function faltaElToken() {
+  try {
+    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error) return false;
+    return data.nextLevel === "aal2" && data.currentLevel !== "aal2";
+  } catch (err) {
+    // Ante cualquier fallo inesperado NO se bloquea el ingreso: el token es una
+    // protección extra y no debe dejar a nadie fuera por un error de red.
+    console.error("No se pudo comprobar el token:", err);
+    return false;
+  }
+}
+
+// true si la base exige cambiar la clave antes de operar. Si la consulta falla (red,
+// función aún no instalada) NO se bloquea el navegador: el servidor ya no entrega
+// datos a una cuenta pendiente, con o sin esta ventana.
+async function necesitaCambiarClave() {
+  const { data, error } = await supabase.rpc("necesita_cambiar_clave");
+  if (error) { console.warn("necesita_cambiar_clave:", error.message); return false; }
+  return data === true;
+}
+
+async function onAuthed(session) {
+  state.session = session;
+  if (await faltaElToken()) {
+    $("topbar").classList.add("hidden");
+    $("tokenError").classList.add("hidden");
+    $("tokenCodigo").value = "";
+    showView("view-token");
+    $("tokenCodigo").focus();
+    return;
+  }
+  // El cambio de clave se exige en el SERVIDOR: si la clave es la inicial, la base
+  // marca la cuenta y no le da acceso a nada hasta que la clave cambie de verdad.
+  // Aquí solo se muestra la ventana para hacerlo.
+  try { await supabase.rpc("exigir_cambio_si_clave_inicial"); } catch (err) { console.warn(err); }
+  if (await necesitaCambiarClave()) {
+    $("topbar").classList.add("hidden");
+    showView("view-login");
+    abrirCambioClave({ obligatorio: true });
+    return;
+  }
+  $("topbar").classList.remove("hidden");
+  await loadProfile(session.user.id);
+  void prepararAlertasMovil();
+  showView("view-dashboard");
+  // Efectivos se carga ANTES que las notas (y se espera) porque
+  // renderNotasTable decide si mostrar el botón "Descargar Imputación" según
+  // state.efectivos; si las notas se pintaran primero, ese arreglo estaría
+  // vacío en el primer render y el botón no aparecería en ninguna fila hasta
+  // que algo más (como una búsqueda) forzara un segundo render.
+  await loadEfectivos();
+  loadNotas();
+  // Se precarga en segundo plano (no se espera) para que estén listas en
+  // cuanto se abra el modal de Orden de Sanción o el asistente flotante,
+  // sin retrasar el inicio de sesión.
+  loadDirectivasView();
+  // Roles de servicio: el admin los usa desde el modal de nueva nota para
+  // resolver el puesto por fecha sin visitar la pestaña.
+  if (state.role === "admin") loadRolesServicio();
+}
+
+function onSignedOut() {
+  state.session = null;
+  state.role = null;
+  $("topbar").classList.add("hidden");
+  showView("view-login");
+}
+
+supabase.auth.onAuthStateChange((_event, session) => {
+  if (!session) { onSignedOut(); return; }
+  // Supabase repite SIGNED_IN / TOKEN_REFRESHED con la MISMA sesión al volver a la
+  // pestaña o al renovarse el token. Antes cada repetición ejecutaba onAuthed, que
+  // manda a "Expedientes" y recarga todo: quien estaba en Seguimiento, en un
+  // expediente o con una ficha abierta era devuelto al inicio sin haber hecho nada.
+  // Si esa persona ya está dentro de la app, solo se actualiza el token.
+  const yaEnLaApp = state.session?.user?.id === session.user.id && !$("topbar").classList.contains("hidden");
+  if (yaEnLaApp) { state.session = session; return; }
+  onAuthed(session);
+});
+
+supabase.auth.getSession().then(({ data }) => {
+  if (data.session) onAuthed(data.session); else onSignedOut();
+});
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("loginError").classList.add("hidden");
+  let email = $("loginEmail").value.trim();
+  // Los oficiales inician sesión solo con su CIP (Supabase exige un correo
+  // internamente, así que si lo escrito es puro número se le agrega el
+  // dominio interno sin que el usuario tenga que verlo ni escribirlo).
+  if (/^\d+$/.test(email)) email = `${email}@moralydisciplina.local`;
+  const password = $("loginPassword").value;
+  const btn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(btn, true, "Ingresando...");
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      $("loginError").textContent = "Correo o clave incorrectos.";
+      $("loginError").classList.remove("hidden");
+    } else {
+      // Entró con la clave inicial (su propio CIP, que figura en los documentos):
+      // se le exige cambiarla ya. Si esto fallara por lo que fuera, NUNCA debe
+      // impedir el ingreso -- el aviso es una protección extra, no un requisito
+      // para usar la app.
+      try {
+        if (esClaveInicial($("loginEmail").value, password)) abrirCambioClave({ obligatorio: true, claveActual: password });
+      } catch (err) {
+        console.error("No se pudo abrir el cambio de clave:", err);
+      }
+    }
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+// Entrar con Google, igual que en la app Faltos. Existe porque la clave de este
+// formulario vive en Supabase y NO es la de Google: quien entró con Google no tiene
+// por qué conocerla, y antes se quedaba fuera al usar la web desde una computadora.
+$("btnEntrarGoogle").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  $("loginError").classList.add("hidden");
+  ocuparBoton(btn, true, "Abriendo Google...");
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.href.split("#")[0].split("?")[0] },
+    });
+    if (error) throw error;
+    // Si no hubo error el navegador ya se está yendo a Google; no se restaura el botón.
+  } catch (err) {
+    $("loginError").textContent = "No se pudo abrir el acceso con Google: " + (err.message || err);
+    $("loginError").classList.remove("hidden");
+    ocuparBoton(btn, false);
+  }
+});
+
+$("tokenForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("tokenError");
+  errEl.classList.add("hidden");
+  const code = $("tokenCodigo").value.trim();
+  if (!/^\d{6}$/.test(code)) {
+    errEl.textContent = "El código son 6 dígitos.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const btn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(btn, true, "Verificando...");
+  try {
+    const { data: factores, error: errFactores } = await supabase.auth.mfa.listFactors();
+    if (errFactores) throw errFactores;
+    const factor = (factores.totp || [])[0];
+    if (!factor) throw new Error("Esta cuenta no tiene un token activado.");
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
+    if (error) {
+      errEl.textContent = "Código incorrecto o vencido. Escriba el que muestra la app en este momento.";
+      errEl.classList.remove("hidden");
+      $("tokenCodigo").value = "";
+      $("tokenCodigo").focus();
+      return;
+    }
+    const { data } = await supabase.auth.getSession();
+    if (data.session) await onAuthed(data.session);
+  } catch (err) {
+    errEl.textContent = "Error: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+$("tokenSalir").addEventListener("click", async () => {
+  await supabase.auth.signOut();
+});
+
+$("btnLogout").addEventListener("click", async () => {
+  await supabase.auth.signOut();
+});
+
+// ---------- Cambio de clave ----------
+// Obligatorio al ingresar con la clave inicial (sin botón de cerrar: solo
+// cambiarla o cerrar sesión); voluntario desde el botón "Cambiar clave".
+let cambioClave = { obligatorio: false, claveActual: "" };
+
+function abrirCambioClave({ obligatorio = false, claveActual = "" } = {}) {
+  cambioClave = { obligatorio, claveActual };
+  $("cambiarClaveForm").reset();
+  $("ccError").classList.add("hidden");
+  $("cambiarClaveAviso").classList.toggle("hidden", !obligatorio);
+  $("btnCerrarCambiarClave").classList.toggle("hidden", obligatorio);
+  $("modalCambiarClave").classList.remove("hidden");
+  $("ccNueva").focus();
+}
+
+function cerrarCambioClave() {
+  $("modalCambiarClave").classList.add("hidden");
+  $("cambiarClaveForm").reset();
+  cambioClave = { obligatorio: false, claveActual: "" };
+}
+
+$("btnCambiarClave").addEventListener("click", () => abrirCambioClave());
+
+// Aviso de privacidad (Ley 29733): visible desde el acceso y desde Cumplimiento.
+document.querySelectorAll("[data-abrir-aviso]").forEach((b) => b.addEventListener("click", () => $("modalAviso").classList.remove("hidden")));
+$("btnCerrarAviso").addEventListener("click", () => $("modalAviso").classList.add("hidden"));
+$("modalAviso").addEventListener("click", (e) => { if (e.target === $("modalAviso")) $("modalAviso").classList.add("hidden"); });
+$("btnCerrarCambiarClave").addEventListener("click", cerrarCambioClave);
+$("btnSalirCambiarClave").addEventListener("click", async () => {
+  cerrarCambioClave();
+  await supabase.auth.signOut();
+});
+$("cambiarClaveForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("ccError");
+  errEl.classList.add("hidden");
+  const problema = validarClaveNueva($("ccNueva").value, $("ccRepite").value, cambioClave.claveActual);
+  if (problema) {
+    errEl.textContent = problema;
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const btn = $("btnGuardarClave");
+  ocuparBoton(btn, true, "Guardando...");
+  try {
+    const { error } = await supabase.auth.updateUser({ password: $("ccNueva").value });
+    if (error) {
+      errEl.textContent = "No se pudo cambiar la clave: " + (error.message || "error de red o de sesión") + ".";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    // El servidor comprueba que la clave cambió de verdad y levanta la marca.
+    const { data: confirmada, error: errConfirma } = await supabase.rpc("confirmar_cambio_clave");
+    if (errConfirma || confirmada === false) {
+      errEl.textContent = "La clave se guardó pero no pudo validarse. Cierre sesión, ingrese con la clave nueva y repita el cambio.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const eraObligatorio = cambioClave.obligatorio;
+    cerrarCambioClave();
+    toast("Clave actualizada.", "ok");
+    if (eraObligatorio && state.session) await onAuthed(state.session);
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+// ---------- Notas informativas ----------
+async function loadNotas() {
+  const { data, error } = await supabase
+    .from("notas_informativas")
+    .select("*, expedientes(*)")
+    .order("fecha_falta", { ascending: false });
+  if (error) { console.error(error); toast("No se pudieron cargar los expedientes: " + (error.message || "error de red o de sesión") + ". Intente recargar la página."); return; }
+  // La política de RLS "ve notas propias o es admin" ya filtra en el
+  // servidor qué filas puede ver este usuario (por oficial_constato_cip);
+  // el navegador nunca recibe las que no le corresponden, así que aquí ya
+  // no hace falta (ni conviene) repetir el filtro en JavaScript.
+  state.notas = data || [];
+  renderResumenRapidoNotas();
+  renderBandejaAccionesNotas();
+  // Inicio (Expedientes): solo lo pendiente. Seguimiento: solo lo resuelto.
+  renderNotasTable(
+    state.notas.filter((n) => !notaConcluida(n)),
+    "notasTableBody", "notasEmpty",
+    "No hay expedientes pendientes. Los resueltos están en la pestaña «Seguimiento».",
+  );
+  aplicarFiltrosNotas();
+}
+
+let notasVisibles = [];
+
+function renderResumenRapidoNotas() {
+  const notas = state.notas || [];
+  const sinReincorporacion = notas.filter((n) => !n.fecha_reincorporacion).length;
+  const porNotificar = notas.filter((n) => n.fecha_reincorporacion && !n.imputacion_generada_at).length;
+  const plazosVencidos = notas.filter((n) => n.fecha_reincorporacion && n.imputacion_generada_at && !n.fecha_descargo && !n.orden_sancion_generada_at && plazoDescargoVencido(n)).length;
+  $("notasResumenRapido").innerHTML = `
+    <div class="quick-summary-copy">
+      <span class="eyebrow">Prioridades de hoy</span>
+      <strong>${notas.length ? "Revise primero los pasos que bloquean el trámite" : "Aún no hay notas informativas registradas"}</strong>
+      <span class="muted small">${notas.length ? "La vista resalta reincorporaciones, notificaciones y plazos que requieren acción." : "Cree la primera nota para iniciar el seguimiento."}</span>
+    </div>
+    <div class="quick-summary-stats">
+      <div><b>${sinReincorporacion}</b><span>sin reincorporación</span></div>
+      <div><b>${porNotificar}</b><span>por notificar</span></div>
+      <div class="${plazosVencidos ? "is-urgent" : ""}"><b>${plazosVencidos}</b><span>plazo vencido</span></div>
+    </div>`;
+}
+
+function diasHastaFecha(fecha) {
+  if (!fecha) return null;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const destino = new Date(`${fecha}T12:00:00`); destino.setHours(0, 0, 0, 0);
+  return Math.round((destino - hoy) / 86400000);
+}
+
+function obtenerAccionesPrioritariasNotas() {
+  return (state.notas || []).flatMap((nota) => {
+    const nombre = nombreInvestigadoVisible(nota, true) || "Nota sin nombre";
+    if (esGraveConTextoLegal(nota)) {
+      // Sin esta rama, un caso grave/muy grave caía en "!nota.fecha_reincorporacion"
+      // más abajo y la bandeja le decía a Hans que cargue la reincorporación
+      // para continuar -- ya no es cierto, el Informe Administrativo se puede
+      // generar con la ausencia todavía en curso.
+      return [{
+        nota, nombre, prioridad: 0.5, tipo: "Generar Informe Administrativo", clase: "is-urgent",
+        detalle: nota.fecha_reincorporacion
+          ? "La ausencia ya se cerró. Complete las firmas y descargue el Informe Administrativo."
+          : "La ausencia sigue en curso -- ya puede generar el Informe Administrativo \"a la fecha\", sin esperar la reincorporación.",
+      }];
+    }
+    if (nota.archivo_leve_generada_at) {
+      // Archivado sin sanción: caso concluido, no debe seguir sugiriendo
+      // "Preparar Orden de Sanción" solo porque fecha_descargo está presente.
+      return [];
+    }
+    if (nota.orden_sancion_generada_at && !nota.orden_notificada_at) {
+      return [{ nota, nombre, prioridad: 0, tipo: "Cargar expediente firmado", detalle: "La Orden ya se generó; suba el legajo completo firmado y registre la fecha de notificación.", clase: "is-urgent" }];
+    }
+    if (nota.fecha_reincorporacion && nota.imputacion_generada_at && !nota.fecha_descargo && !nota.orden_sancion_generada_at && plazoDescargoVencido(nota)) {
+      return [{ nota, nombre, prioridad: 1, tipo: "Plazo vencido", detalle: "Defina el siguiente trámite: acta de no descargo u orden de sanción.", clase: "is-urgent" }];
+    }
+    if (nota.imputacion_generada_at && !nota.fecha_descargo && !nota.orden_sancion_generada_at && diasHastaFecha(fechaLimiteDescargo(nota)) === 1) {
+      return [{ nota, nombre, prioridad: 1.5, tipo: "Plazo vence mañana", detalle: "Verifique la recepción del descargo o prepare el trámite que corresponde.", clase: "is-pending" }];
+    }
+    if (nota.fecha_descargo && !nota.orden_sancion_generada_at) {
+      return [{ nota, nombre, prioridad: 2, tipo: "Preparar Orden de Sanción", detalle: "El descargo ya fue registrado. Complete el análisis y genere la Orden.", clase: "is-ready" }];
+    }
+    if (nota.fecha_reincorporacion && !nota.imputacion_generada_at) {
+      return [{ nota, nombre, prioridad: 3, tipo: "Generar imputación", detalle: "Verifique los datos y genere la notificación de imputación.", clase: "is-pending" }];
+    }
+    if (!nota.fecha_reincorporacion) {
+      return [{ nota, nombre, prioridad: 4, tipo: "Registrar reincorporación", detalle: "Cargue la fecha, hora y nota de reincorporación para continuar.", clase: "is-pending" }];
+    }
+    return [];
+  }).sort((a, b) => a.prioridad - b.prioridad);
+}
+
+function renderBandejaAccionesNotas() {
+  const acciones = obtenerAccionesPrioritariasNotas();
+  const bandeja = $("bandejaAcciones");
+  bandeja.classList.toggle("hidden", acciones.length === 0);
+  if (!acciones.length) return;
+  $("bandejaAccionesCount").textContent = `${acciones.length} pendiente${acciones.length === 1 ? "" : "s"}`;
+  $("bandejaAccionesLista").innerHTML = acciones.slice(0, 5).map((accion) => `
+    <article class="action-item ${accion.clase}">
+      <div class="action-item-copy">
+        <span class="action-type">${escapeHtml(accion.tipo)}</span>
+        <strong>${escapeHtml(accion.nombre)}</strong>
+        <span class="muted small">${escapeHtml(accion.detalle)}</span>
+      </div>
+      <button type="button" class="btn-secondary btn-abrir-accion" data-id="${escapeHtml(accion.nota.id)}">Resolver</button>
+    </article>`).join("");
+  document.querySelectorAll(".btn-abrir-accion").forEach((btn) => {
+    btn.addEventListener("click", () => openNotaDetail(btn.dataset.id));
+  });
+}
+
+function renderAgendaNotas() {
+  const query = $("buscarAgenda").value.trim().toLowerCase();
+  const acciones = obtenerAccionesPrioritariasNotas().filter((accion) =>
+    !query || `${accion.nombre} ${accion.tipo} ${accion.detalle}`.toLowerCase().includes(query)
+  );
+  $("agendaEmpty").classList.toggle("hidden", acciones.length > 0);
+  $("agendaLista").innerHTML = acciones.map((accion, index) => `
+    <article class="agenda-item ${accion.clase}">
+      <div class="agenda-order">${index + 1}</div>
+      <div class="action-item-copy">
+        <span class="action-type">${escapeHtml(accion.tipo)}</span>
+        <strong>${escapeHtml(accion.nombre)}</strong>
+        <span class="muted small">${escapeHtml(accion.detalle)}</span>
+      </div>
+      <button type="button" class="btn-primary btn-abrir-agenda" data-id="${escapeHtml(accion.nota.id)}">Abrir nota</button>
+    </article>`).join("");
+  document.querySelectorAll(".btn-abrir-agenda").forEach((btn) => btn.addEventListener("click", () => openNotaDetail(btn.dataset.id)));
+}
+
+$("buscarAgenda").addEventListener("input", renderAgendaNotas);
+
+function exportarAgendaCalendario() {
+  const fechaIcs = (fecha) => String(fecha || hoyLima()).slice(0, 10).replaceAll("-", "");
+  const escaparIcs = (texto) => String(texto || "").replace(/[\\,;]/g, "\\$&").replace(/\n/g, "\\n");
+  const eventos = obtenerAccionesPrioritariasNotas().map((accion, index) => {
+    const fecha = accion.tipo === "Plazo vencido" ? fechaLimiteDescargo(accion.nota) : (accion.nota.created_at || new Date().toISOString());
+    const stamp = `${Date.now()}-${index}@moral-y-disciplina`;
+    return ["BEGIN:VEVENT", `UID:${stamp}`, `DTSTAMP:${fechaIcs(new Date().toISOString())}T000000Z`, `DTSTART;VALUE=DATE:${fechaIcs(fecha)}`, `SUMMARY:${escaparIcs(`${accion.tipo}: ${accion.nombre}`)}`, `DESCRIPTION:${escaparIcs(accion.detalle)}`, "END:VEVENT"].join("\r\n");
+  });
+  const contenido = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Moral y Disciplina//Agenda//ES", ...eventos, "END:VCALENDAR"].join("\r\n");
+  saveAs(new Blob([contenido], { type: "text/calendar;charset=utf-8" }), `agenda_moral_disciplina_${hoyLima()}.ics`);
+}
+
+$("btnExportarAgenda").addEventListener("click", exportarAgendaCalendario);
+
+let documentosGenerados = [];
+
+async function loadDocumentosGenerados() {
+  const { data, error } = await supabase.from("documentos_generados").select("*").order("generado_at", { ascending: false });
+  if (error) { console.error(error); return; }
+  documentosGenerados = data || [];
+  await renderDocumentosGenerados();
+}
+
+async function renderDocumentosGenerados() {
+  const query = $("buscarDocumentos").value.trim().toLowerCase();
+  const docs = documentosGenerados.filter((doc) => !query || `${doc.tipo || ""} ${doc.archivo_nombre || ""} ${doc.generado_por_email || ""}`.toLowerCase().includes(query));
+  $("documentosEmpty").classList.toggle("hidden", docs.length > 0);
+  const etiquetas = { imputacion: "Imputación", acta_no_descargo: "Acta de No Descargo", orden_sancion: "Orden de Sanción" };
+  const filas = await Promise.all(docs.map(async (doc) => {
+    const enlace = await fileLinkHtml("notas", doc.archivo_path, doc.archivo_nombre);
+    return `<article class="document-item"><div><span class="action-type">${escapeHtml(etiquetas[doc.tipo] || doc.tipo || "Documento")}</span><strong>${escapeHtml(doc.archivo_nombre || "Sin nombre")}</strong><span class="muted small">Generado ${formatFechaHora(fechaLima(doc.generado_at), horaLima(doc.generado_at))} · ${escapeHtml(doc.generado_por_email || "-")}</span></div><div>${enlace}</div></article>`;
+  }));
+  $("documentosLista").innerHTML = filas.join("");
+}
+
+$("buscarDocumentos").addEventListener("input", () => { renderDocumentosGenerados(); });
+
+// ---------- Mesa de partes: recepción de expedientes cerrados ----------
+// El admin registra el PDF firmado final de un expediente ya cerrado (Orden
+// generada + notificada). Cada archivo recibe una carpeta lógica automática
+// dentro del bucket, para ubicarlo sin renombrarlo a mano.
+function segmentoRuta(texto, fallback = "sin-dato") {
+  const limpio = String(texto || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+  return (limpio || fallback).slice(0, 90);
+}
+function datosRutaExpedienteCerrado(nota, archivoNombre) {
+  const ahora = new Date();
+  const anio = String(ahora.getFullYear());
+  const mes = String(ahora.getMonth() + 1).padStart(2, "0");
+  const investigado = ubicarInvestigadoEnEfectivos(nota, state.efectivos);
+  const cipInvestigado = investigado?.cip || "SIN-CIP";
+  const carpeta = [
+    nota.fecha_falta || "sin-fecha", nombreInvestigadoVisible(nota),
+    `CIP ${cipInvestigado}`, nota.codigo_infraccion || "SIN-CODIGO",
+  ].map((v) => segmentoRuta(v)).join(" - ");
+  const nombreSeguro = segmentoRuta(archivoNombre || "expediente_firmado.pdf", "expediente_firmado.pdf");
+  return { carpeta, cipInvestigado, ruta: `expedientes_cerrados/${anio}/${mes}/${carpeta}/${Date.now()}_${nombreSeguro}` };
+}
+function etiquetaEstadoRecepcion(estado) {
+  return ({ remitido: "Por revisar", recibido: "Recibido", observado: "Observado", archivado: "Archivado" })[estado] || "Por revisar";
+}
+
+async function loadExpedientesRemitidos() {
+  const { data, error } = await supabase
+    .from("expedientes_remitidos").select("*").order("remitido_at", { ascending: false });
+  if (error) { console.error(error); toast("No se pudo cargar la recepción: " + error.message); return; }
+  state.expedientesRemitidos = data || [];
+  await cargarEstadoRespaldoDrive();
+  await renderExpedientesRemitidos();
+}
+
+async function componentesExpedienteCompleto(nota) {
+  const { data: docs, error } = await supabase.from("documentos_generados").select("tipo").eq("nota_id", nota.id);
+  if (error) throw error;
+  const tiene = (t) => (docs || []).some((d) => d.tipo === t);
+  return [
+    { etiqueta: "Inicio de Imputación", listo: tiene("imputacion") },
+    { etiqueta: "Notificación de la Imputación", listo: !!nota.imputacion_generada_at },
+    nota.fecha_descargo
+      ? { etiqueta: "Descargo del investigado adjunto", listo: !!nota.archivo_descargo_path }
+      : { etiqueta: "Acta de No Descargo", listo: tiene("acta_no_descargo") },
+    { etiqueta: "Orden de Sanción", listo: tiene("orden_sancion") },
+    { etiqueta: "Cargo firmado de la Orden", listo: !!nota.orden_notificada_at && !!nota.archivo_orden_notificacion_path },
+  ];
+}
+
+async function actualizarChecklistExpedienteCompleto() {
+  const contenedor = $("checklistExpedienteRecibido");
+  if (!contenedor) return;
+  const nota = state.notas.find((n) => n.id === $("fNotaRecibida").value);
+  if (!nota) { contenedor.innerHTML = '<p class="muted small">Seleccione un expediente para revisar sus documentos firmados.</p>'; return; }
+  try {
+    const componentes = await componentesExpedienteCompleto(nota);
+    contenedor.innerHTML = componentes.map((item) =>
+      `<div class="detail-field"><div class="label">${item.listo ? "✓" : "⚠"} ${escapeHtml(item.etiqueta)}</div><div class="value">${item.listo ? "Registrado digitalmente" : "Falta registrar o adjuntar"}</div></div>`
+    ).join("");
+  } catch (error) {
+    contenedor.innerHTML = '<p class="error">No se pudo revisar los documentos del expediente.</p>';
+    console.error(error);
+  }
+}
+
+function prepararFormularioRegistroRecepcion() {
+  const panel = $("registroRecepcionPanel");
+  const select = $("fNotaRecibida");
+  if (!panel || !select) return;
+  const registrados = new Set(state.expedientesRemitidos.map((e) => e.nota_id));
+  const disponibles = (state.notas || []).filter((n) =>
+    n.orden_sancion_generada_at && n.orden_notificada_at && !registrados.has(n.id)
+  );
+  select.innerHTML = `<option value="">Seleccione un expediente cerrado...</option>${disponibles.map((n) =>
+    `<option value="${escapeHtml(n.id)}">${escapeHtml(`${nombreInvestigadoVisible(n, true)} · Falta ${formatDate(n.fecha_falta)} · ${n.codigo_infraccion || "sin código"}`)}</option>`
+  ).join("")}`;
+  select.onchange = actualizarChecklistExpedienteCompleto;
+  $("btnRegistrarExpedienteRecibido").onclick = () => { panel.classList.remove("hidden"); actualizarChecklistExpedienteCompleto(); };
+  $("btnCancelarRegistroRecepcion").onclick = () => panel.classList.add("hidden");
+  $("registroRecepcionForm").onsubmit = submitRegistroRecepcion;
+  const btnDrive = $("btnConectarDrive");
+  if (btnDrive) btnDrive.onclick = conectarGoogleDrive;
+}
+
+async function renderExpedientesRemitidos() {
+  const q = ($("buscarRecepcion")?.value || "").toLowerCase().trim();
+  const lista = state.expedientesRemitidos.filter((item) => !q ||
+    [item.investigado_nombre, item.investigado_cip, item.codigo_infraccion, item.remitido_por_cip, item.remitido_por_email, item.fecha_falta]
+      .filter(Boolean).join(" ").toLowerCase().includes(q));
+  const porRevisar = state.expedientesRemitidos.filter((i) => i.estado === "remitido").length;
+  const observados = state.expedientesRemitidos.filter((i) => i.estado === "observado").length;
+  const archivados = state.expedientesRemitidos.filter((i) => i.estado === "archivado").length;
+  $("recepcionResumen").innerHTML = `
+    <div class="quick-summary-copy"><span class="eyebrow">Mesa de partes digital</span><strong>${porRevisar ? "Hay expedientes pendientes de revisión" : "La bandeja está al día"}</strong><span class="muted small">Cada archivo conserva una carpeta automática para ubicarlo sin renombrarlo.</span></div>
+    <div class="quick-summary-stats"><div class="is-pending"><b>${porRevisar}</b><span>por revisar</span></div><div class="is-urgent"><b>${observados}</b><span>observados</span></div><div class="is-ready"><b>${archivados}</b><span>archivados</span></div></div>`;
+  $("recepcionEmpty").classList.toggle("hidden", lista.length > 0);
+  const filas = await Promise.all(lista.map(async (item) => {
+    const enlace = await fileLinkHtml("expedientes-terminados-pnp", item.archivo_path, item.archivo_nombre);
+    const enlaceHt = await fileLinkHtml("expedientes-terminados-pnp", item.archivo_ht_path, item.archivo_ht_nombre);
+    const enlaceOficio = await fileLinkHtml("expedientes-terminados-pnp", item.archivo_oficio_path, item.archivo_oficio_nombre);
+    const esPendiente = item.estado === "remitido";
+    const driveConectado = $("btnConectarDrive") && /Reconectar/.test($("btnConectarDrive").textContent || "");
+    const driveEstadoHtml = item.drive_expediente_url
+      ? `<span class="drive-estado ok">${svgIco("nube")}Copiado a Drive${item.drive_sync_at ? ` · ${formatDate(fechaLima(item.drive_sync_at))}` : ""}</span>`
+      : item.drive_error
+        ? `<span class="drive-estado error">${svgIco("nube")}Error al respaldar: ${escapeHtml(item.drive_error)}</span>`
+        : `<span class="drive-estado pend">${svgIco("nube")}Aún no respaldado en Drive</span>`;
+    const driveBotonHtml = driveConectado
+      ? `<button type="button" class="btn-secondary btn-respaldar-drive" data-id="${item.id}">${svgIco("nube")}Respaldar en Drive</button>`
+      : "";
+    return `<article class="reception-item estado-${escapeHtml(item.estado || "remitido")}">
+      <div class="reception-item-main">
+        <div class="reception-title-row"><span class="reception-status">${escapeHtml(etiquetaEstadoRecepcion(item.estado))}</span><strong>${escapeHtml(item.investigado_nombre || "Investigado sin nombre")}</strong></div>
+        <div class="reception-meta"><span>${svgIco("calendario")}Falta: ${formatDate(item.fecha_falta)}</span><span>${svgIco("balanza")}${escapeHtml(item.codigo_infraccion || "-")}</span><span>${svgIco("credencial")}CIP investigado: ${escapeHtml(item.investigado_cip || "-")}</span></div>
+        <p class="muted small">Registrado por ${escapeHtml(item.remitido_por_cip ? `CIP ${item.remitido_por_cip}` : (item.remitido_por_email || "-"))} · ${formatFechaHora(fechaLima(item.remitido_at), horaLima(item.remitido_at))}</p>
+        ${item.observacion ? `<p class="reception-observation"><b>Observación:</b> ${escapeHtml(item.observacion)}</p>` : ""}
+        <p class="storage-path" title="Carpeta de archivo">${svgIco("carpeta")}${escapeHtml(item.carpeta_archivo || item.archivo_path || "")}</p>
+        ${driveEstadoHtml}
+      </div>
+      <div class="reception-actions"><div>${enlace}</div>${esPendiente
+        ? `<button type="button" class="btn-primary btn-recibir-expediente" data-id="${item.id}">${svgIco("check")}Recibir</button><button type="button" class="btn-secondary btn-observar-expediente" data-id="${item.id}">Observar</button>`
+        : item.estado === "recibido" ? `<button type="button" class="btn-secondary btn-archivar-expediente" data-id="${item.id}">Archivar</button>` : ""}${driveBotonHtml}</div>
+      <details class="reception-documents"><summary class="btn-secondary">HT y Oficio</summary><div class="reception-documents-body"><div><span class="muted small">HT</span>${enlaceHt}</div><div><span class="muted small">Oficio</span>${enlaceOficio}</div><form class="form-documentos-cierre" data-id="${item.id}"><label>Adjuntar HT<input type="file" class="f-ht-cierre" accept="application/pdf,image/*" /></label><label>Adjuntar Oficio<input type="file" class="f-oficio-cierre" accept="application/pdf,image/*" /></label><button type="submit" class="btn-secondary">Guardar documentos</button></form></div></details>
+    </article>`;
+  }));
+  $("recepcionLista").innerHTML = filas.join("");
+  document.querySelectorAll(".btn-recibir-expediente").forEach((b) => b.addEventListener("click", () => actualizarEstadoRecepcion(b.dataset.id, "recibido")));
+  document.querySelectorAll(".btn-archivar-expediente").forEach((b) => b.addEventListener("click", () => actualizarEstadoRecepcion(b.dataset.id, "archivado")));
+  document.querySelectorAll(".btn-observar-expediente").forEach((b) => b.addEventListener("click", () => {
+    const observacion = prompt("Indique qué debe corregir o completar:");
+    if (observacion?.trim()) actualizarEstadoRecepcion(b.dataset.id, "observado", observacion.trim());
+  }));
+  document.querySelectorAll(".form-documentos-cierre").forEach((f) => f.addEventListener("submit", submitDocumentosCierre));
+  document.querySelectorAll(".btn-respaldar-drive").forEach((b) => b.addEventListener("click", async () => {
+    const registro = state.expedientesRemitidos.find((i) => i.id === b.dataset.id);
+    if (!registro) return;
+    ocuparBoton(b, true, "Respaldando...");
+    await respaldarExpedienteCompletoEnDrive(registro, false);
+  }));
+  prepararFormularioRegistroRecepcion();
+}
+
+async function actualizarEstadoRecepcion(id, estado, observacion = null) {
+  const cambios = { estado, updated_at: new Date().toISOString() };
+  if (estado === "recibido") { cambios.recibido_at = new Date().toISOString(); cambios.recibido_por = state.session.user.id; }
+  if (observacion !== null) cambios.observacion = observacion;
+  const { error } = await supabase.from("expedientes_remitidos").update(cambios).eq("id", id);
+  if (error) { toast("No se pudo actualizar la recepción: " + error.message); return; }
+  loadExpedientesRemitidos();
+}
+
+async function submitRegistroRecepcion(e) {
+  e.preventDefault();
+  const errorEl = $("registroRecepcionError");
+  errorEl.classList.add("hidden");
+  const nota = state.notas.find((n) => n.id === $("fNotaRecibida").value);
+  const archivo = $("fArchivoExpedienteRecibido").files[0];
+  if (!nota || !archivo) { errorEl.textContent = "Seleccione un expediente cerrado y adjunte el PDF firmado."; errorEl.classList.remove("hidden"); return; }
+  if (archivo.type !== "application/pdf" && !/\.pdf$/i.test(archivo.name)) { errorEl.textContent = "El expediente completo debe subirse como un único archivo PDF."; errorEl.classList.remove("hidden"); return; }
+  const boton = e.target.querySelector("button[type=submit]");
+  ocuparBoton(boton, true, "Verificando...");
+  try {
+    const componentes = await componentesExpedienteCompleto(nota);
+    const faltantes = componentes.filter((c) => !c.listo).map((c) => c.etiqueta);
+    if (faltantes.length) { errorEl.textContent = `No se puede recibir: faltan registros de ${faltantes.join(", ")}.`; errorEl.classList.remove("hidden"); return; }
+    boton.textContent = "Registrando...";
+    const ruta = datosRutaExpedienteCerrado(nota, archivo.name);
+    const { error: upErr } = await supabase.storage.from("expedientes-terminados-pnp").upload(ruta.ruta, archivo, { upsert: false });
+    if (upErr) throw upErr;
+    const ahora = new Date().toISOString();
+    const { data: insertado, error } = await supabase.from("expedientes_remitidos").insert({
+      nota_id: nota.id, investigado_nombre: nombreInvestigadoVisible(nota, true), investigado_cip: ruta.cipInvestigado,
+      fecha_falta: nota.fecha_falta, codigo_infraccion: nota.codigo_infraccion,
+      remitido_por: state.session.user.id, remitido_por_email: state.email, remitido_por_cip: state.cip,
+      remitido_at: ahora, archivo_path: ruta.ruta, archivo_nombre: archivo.name, carpeta_archivo: ruta.carpeta,
+      estado: "recibido", observacion: $("fObservacionExpedienteRecibido").value.trim() || null,
+      recibido_por: state.session.user.id, recibido_at: ahora,
+    }).select("id").single();
+    if (error) throw error;
+    $("registroRecepcionPanel").classList.add("hidden");
+    e.target.reset();
+    if (insertado?.id) void respaldarArchivoEnDrive(insertado.id, "expediente", true);
+    await loadExpedientesRemitidos();
+  } catch (error) {
+    errorEl.textContent = "No se pudo registrar el expediente: " + (error.message || error);
+    errorEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(boton, false);
+  }
+}
+
+async function submitDocumentosCierre(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const id = form.dataset.id;
+  const registro = state.expedientesRemitidos.find((i) => i.id === id);
+  const ht = form.querySelector(".f-ht-cierre").files[0];
+  const oficio = form.querySelector(".f-oficio-cierre").files[0];
+  if (!registro || (!ht && !oficio)) { toast("Adjunte por lo menos el HT o el Oficio.", "info"); return; }
+  const boton = form.querySelector("button[type=submit]");
+  ocuparBoton(boton, true, "Guardando...");
+  try {
+    const cambios = { updated_at: new Date().toISOString() };
+    const tiposSubidos = [];
+    for (const [tipo, archivo] of [["ht", ht], ["oficio", oficio]]) {
+      if (!archivo) continue;
+      const ruta = `${registro.nota_id}/cierre/${tipo}_${Date.now()}_${segmentoRuta(archivo.name, `${tipo}.pdf`)}`;
+      const { error: upErr } = await supabase.storage.from("expedientes-terminados-pnp").upload(ruta, archivo, { upsert: false });
+      if (upErr) throw upErr;
+      cambios[`archivo_${tipo}_path`] = ruta;
+      cambios[`archivo_${tipo}_nombre`] = archivo.name;
+      tiposSubidos.push(tipo);
+    }
+    const { error } = await supabase.from("expedientes_remitidos").update(cambios).eq("id", id);
+    if (error) throw error;
+    for (const tipo of tiposSubidos) void respaldarArchivoEnDrive(id, tipo, true);
+    await loadExpedientesRemitidos();
+  } catch (error) {
+    toast("No se pudieron guardar los documentos: " + (error.message || error));
+  } finally {
+    ocuparBoton(boton, false);
+  }
+}
+
+// ---------- Respaldo en Google Drive ----------
+async function cargarEstadoRespaldoDrive() {
+  const estado = $("estadoRespaldoDrive");
+  const boton = $("btnConectarDrive");
+  if (!estado || !boton || state.role !== "admin") { if (estado) estado.classList.add("hidden"); if (boton) boton.classList.add("hidden"); return; }
+  estado.classList.remove("hidden"); boton.classList.remove("hidden");
+  try {
+    const { data, error } = await supabase.rpc("estado_respaldo_drive");
+    if (error) throw error;
+    const conexion = Array.isArray(data) ? data[0] : data;
+    if (conexion?.conectado) {
+      estado.textContent = `✓ Google Drive conectado${conexion.cuenta_google ? `: ${conexion.cuenta_google}` : ""}. Cada expediente firmado se copia a su Drive.`;
+      boton.innerHTML = svgIco("nube") + "Reconectar Drive";
+    } else {
+      estado.textContent = "Google Drive aún no está conectado. Los expedientes ya están protegidos en Supabase.";
+      boton.innerHTML = svgIco("nube") + "Conectar Drive";
+    }
+  } catch (error) {
+    console.warn("No se pudo consultar Drive:", error);
+    estado.textContent = "El estado de Drive estará disponible cuando termine la configuración administrativa.";
+  }
+}
+
+async function conectarGoogleDrive() {
+  const boton = $("btnConectarDrive");
+  if (!boton) return;
+  ocuparBoton(boton, true, "Preparando conexión...");
+  try {
+    const { data, error } = await supabase.functions.invoke("google-drive-conectar", { body: {} });
+    if (error) throw new Error(await mensajeErrorFuncion(error));
+    if (data?.error) throw new Error(data.error);
+    if (!data?.authorizationUrl) throw new Error("No se recibió el enlace de autorización de Google.");
+    window.location.assign(data.authorizationUrl);
+  } catch (error) {
+    toast("No se pudo iniciar la conexión con Drive: " + (error.message || error));
+    ocuparBoton(boton, false);
+  }
+}
+
+async function respaldarArchivoEnDrive(expedienteId, tipo, silencioso = false) {
+  const { data, error } = await supabase.functions.invoke("respaldar-expediente-drive", { body: { expedienteId, tipo } });
+  if (error || data?.error) {
+    const mensaje = data?.error || (error ? await mensajeErrorFuncion(error) : "No se pudo copiar el archivo a Drive.");
+    if (!silencioso) toast(mensaje);
+    return { ok: false, error: mensaje };
+  }
+  return { ok: true, data };
+}
+
+async function respaldarExpedienteCompletoEnDrive(expediente, silencioso = false) {
+  const tipos = ["expediente", expediente.archivo_ht_path ? "ht" : null, expediente.archivo_oficio_path ? "oficio" : null].filter(Boolean);
+  const resultados = [];
+  for (const tipo of tipos) resultados.push(await respaldarArchivoEnDrive(expediente.id, tipo, silencioso));
+  const fallo = resultados.find((r) => !r.ok);
+  if (!silencioso) toast(fallo ? `Se respaldaron algunos archivos. Revise: ${fallo.error}` : "✓ El expediente y sus documentos se respaldaron en Drive.", fallo ? "error" : "ok");
+  await loadExpedientesRemitidos();
+  return !fallo;
+}
+
+$("buscarRecepcion")?.addEventListener("input", renderExpedientesRemitidos);
+
+function renderNotasTable(list, tbodyId = "notasTableBody", emptyId = "notasEmpty", emptyMsg = "No hay notas informativas registradas.") {
+  notasVisibles = list;
+  const tbody = $(tbodyId);
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const emptyEl = $(emptyId);
+  if (emptyEl) {
+    emptyEl.textContent = !state.notas?.length ? "No hay notas informativas registradas." : emptyMsg;
+    emptyEl.classList.toggle("hidden", list.length > 0);
+  }
+  for (const n of list) {
+    const tr = document.createElement("tr");
+    const puedeDescargar = puedeGenerarImputacion(n, state.efectivos);
+    const puedeActa = puedeGenerarActaNoDescargo(n, state.efectivos);
+    tr.innerHTML = `
+      <td class="case-grade">${escapeHtml(n.grado || "")}</td>
+      <td class="case-person"><strong>${escapeHtml(nombreInvestigadoVisible(n))}</strong>${continuanFaltosChipHtml(n)}</td>
+      <td class="case-date">${formatFechaHora(n.fecha_falta, n.hora_falta)}</td>
+      <td class="case-hide">${escapeHtml(n.numero_nota_falta || "")}</td>
+      <td class="case-hide">${escapeHtml(n.oficial_constato || "-")}</td>
+      <td class="case-hide">${formatFechaHora(n.fecha_reincorporacion, n.hora_reincorporacion)}</td>
+      <td class="case-hide">${escapeHtml(n.numero_nota_reincorporacion || "-")}</td>
+      <td class="case-hide">${formatearHorasFalto(n) || "-"}</td>
+      <td class="case-code">${escapeHtml(n.codigo_infraccion || "")}</td>
+      <td class="case-progress-cell">${progresoNotaHtml(n)}</td>
+      <td class="row-actions"><div class="row-actions-inner">${puedeDescargar ? `<button type="button" class="btn-secondary btn-descargar-imputacion" title="Descargar Inicio de Imputación de Infracción Leve">${svgIco("descargar")}Imputación</button>` : ""}${puedeActa ? `<button type="button" class="btn-secondary btn-descargar-acta" title="Descargar Acta de No Recepción de Descargos">${svgIco("descargar")}Acta No Descargo</button>` : ""} <span class="row-chevron">›</span></div></td>
+    `;
+    tr.addEventListener("click", () => openNotaDetail(n.id));
+    tr.querySelector(".btn-descargar-imputacion")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handleDescargarImputacion(n, e.currentTarget);
+    });
+    tr.querySelector(".btn-descargar-acta")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handleDescargarActaNoDescargo(n, e.currentTarget);
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+// Archiva en Storage y registra en documentos_generados cada versión de un
+// documento generado -- "mejor esfuerzo": si falla (red, permisos), se deja
+// constancia en consola pero NUNCA bloquea la descarga real del oficial,
+// que ya ocurrió antes de llamar a esta función.
+async function registrarVersionDocumento(notaId, tipo, blob, nombreArchivo) {
+  try {
+    const path = `${notaId}/generados/${tipo}_${Date.now()}_${nombreArchivo}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, blob);
+    if (upErr) { console.error("No se pudo archivar la versión del documento:", upErr); return; }
+    const { error } = await supabase.from("documentos_generados").insert({
+      nota_id: notaId,
+      tipo,
+      archivo_path: path,
+      archivo_nombre: nombreArchivo,
+      generado_por: state.session.user.id,
+      generado_por_email: state.email,
+    });
+    if (error) console.error("No se pudo registrar la versión del documento:", error);
+  } catch (err) {
+    console.error("No se pudo archivar la versión del documento:", err);
+  }
+}
+
+function nombreArchivoDocumento(prefijo, nota) {
+  return `${prefijo} - ${nombreInvestigadoVisible(nota, true)}.docx`.replace(/\s+/g, " ").trim();
+}
+
+// Nombre del investigado en el formato visible "Nombres APELLIDOS" (apellidos
+// en MAYÚSCULAS), opcionalmente con el grado delante. Se usa en tablas,
+// exportaciones, nombres de archivo, encabezados y en lo que se manda a la IA.
+function nombreInvestigadoVisible(nota, incluirGrado = false) {
+  const nombre = nombreCompletoVisible(nota?.apellidos, nota?.nombres);
+  return `${incluirGrado ? (nota?.grado || "").trim() : ""} ${nombre}`.replace(/\s+/g, " ").trim();
+}
+
+// La IA (o el propio oficial) puede dejar el resumen del descargo vacío o con
+// la frase genérica de relleno. En ese caso el resumen no sirve para la Orden
+// y hay que exigir uno real de los puntos relevantes y argumentos de defensa.
+function esResumenDescargoInsuficiente(texto) {
+  const resumen = String(texto || "").replace(/\s+/g, " ").trim();
+  return !resumen || /^El descargo presentado debe ser valorado junto con el archivo original\.?$/i.test(resumen);
+}
+
+async function handleDescargarImputacion(nota, btnEl) {
+  ocuparBoton(btnEl, true, "Generando...");
+  try {
+    const blob = await renderizarImputacionDocx(nota, state.efectivos);
+    const nombreArchivo = nombreArchivoDocumento("IMPUTACION LEVE", nota);
+    saveAs(blob, nombreArchivo);
+    registrarVersionDocumento(nota.id, "imputacion", blob, nombreArchivo);
+    // Se registra la primera vez que se genera/descarga: es la fecha que se usa
+    // como notificación al investigado para contar el plazo de descargo.
+    if (!nota.imputacion_generada_at) {
+      const ahora = new Date().toISOString();
+      const { error } = await supabase.from("notas_informativas").update({ imputacion_generada_at: ahora }).eq("id", nota.id);
+      if (!error) nota.imputacion_generada_at = ahora;
+    }
+  } catch (err) {
+    console.error(err);
+    toast(err.message || "No se pudo generar el documento de imputación.");
+  } finally {
+    ocuparBoton(btnEl, false);
+  }
+}
+
+async function handleDescargarActaNoDescargo(nota, btnEl) {
+  ocuparBoton(btnEl, true, "Generando...");
+  try {
+    const blob = await renderizarActaNoDescargoDocx(nota, state.efectivos);
+    const nombreArchivo = nombreArchivoDocumento("ACTA NO DESCARGO", nota);
+    saveAs(blob, nombreArchivo);
+    registrarVersionDocumento(nota.id, "acta_no_descargo", blob, nombreArchivo);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || "No se pudo generar el acta de no descargo.");
+  } finally {
+    ocuparBoton(btnEl, false);
+  }
+}
+
+// La pestaña Seguimiento es el archivo de lo resuelto: solo expedientes con la
+// Orden ya notificada, con buscador y filtro por fecha encima.
+// Persona elegida en la lista de sugerencias (ficha): mientras esté elegida, el
+// archivo de resueltos de abajo muestra solo SUS casos, sin depender de cómo
+// esté escrito su nombre en cada expediente.
+let personaFiltrada = null;
+
+function aplicarFiltrosNotas() {
+  const q = $("searchNotas").value.toLowerCase();
+  const desde = $("filtroDesde").value;
+  const hasta = $("filtroHasta").value;
+  const filtrarTexto = !!q, filtrarFecha = !!(desde || hasta);
+  const filtered = state.notas.filter((n) => {
+    if (!notaConcluida(n)) return false;
+    const coincideTexto = personaFiltrada
+      ? mismoEfectivo(n, personaFiltrada)
+      : (!q || [n.nombres, n.apellidos, n.numero_nota_falta, n.codigo_infraccion, n.grado]
+        .filter(Boolean).join(" ").toLowerCase().includes(q));
+    // Filtra por fecha de la falta. Los campos de tipo date de Supabase vienen
+    // como "YYYY-MM-DD", igual que los inputs de fecha, así que se comparan
+    // directamente como texto sin necesidad de convertir a Date.
+    const coincideDesde = !desde || (n.fecha_falta && n.fecha_falta >= desde);
+    const coincideHasta = !hasta || (n.fecha_falta && n.fecha_falta <= hasta);
+    return coincideTexto && coincideDesde && coincideHasta;
+  });
+  const vacio = (filtrarTexto || filtrarFecha)
+    ? "Ningún expediente resuelto coincide con la búsqueda. Si la persona tiene casos en trámite, elíjala en la lista de sugerencias para ver su ficha."
+    : "Todavía no hay expedientes resueltos.";
+  renderNotasTable(filtered, "seguimientoTableBody", "seguimientoEmpty", vacio);
+}
+
+$("searchNotas").addEventListener("input", () => { personaFiltrada = null; aplicarFiltrosNotas(); });
+$("filtroDesde").addEventListener("change", aplicarFiltrosNotas);
+$("filtroHasta").addEventListener("change", aplicarFiltrosNotas);
+$("btnLimpiarFiltroFecha").addEventListener("click", () => {
+  $("filtroDesde").value = "";
+  $("filtroHasta").value = "";
+  $("searchNotas").value = "";
+  personaFiltrada = null;
+  cerrarSugerenciasPersonas();
+  cerrarFichaPersona();
+  aplicarFiltrosNotas();
+});
+
+// ---------- Ficha por persona (pestaña Seguimiento) ----------
+// Al escribir en el buscador se proponen las personas cuyo nombre EMPIEZA así
+// (entre TODOS los expedientes, resueltos o no: antes solo se veían los
+// resueltos y quien tenía casos en trámite nunca aparecía). Al elegir una se
+// muestra su ficha: cuántas veces faltó, el tiempo acumulado y cada caso con su
+// estado. La tabla de abajo sigue siendo el archivo de lo resuelto.
+let indicePersonas = [];
+let indicePersonasFuente = null;
+let sugerenciasPersonas = [];
+let sugerenciaActiva = -1;
+
+function personasDeLaLista() {
+  if (indicePersonasFuente !== state.notas) {
+    indicePersonas = agruparPersonas(state.notas);
+    indicePersonasFuente = state.notas;
+  }
+  return indicePersonas;
+}
+
+function cerrarSugerenciasPersonas() {
+  $("sugerenciasPersonas").classList.add("hidden");
+  $("searchNotas").setAttribute("aria-expanded", "false");
+  sugerenciaActiva = -1;
+}
+
+function pintarSugerenciasPersonas() {
+  const cont = $("sugerenciasPersonas");
+  sugerenciasPersonas = buscarPersonas(personasDeLaLista(), $("searchNotas").value);
+  sugerenciaActiva = -1;
+  if (!sugerenciasPersonas.length) { cont.innerHTML = ""; cerrarSugerenciasPersonas(); return; }
+  cont.innerHTML = sugerenciasPersonas.map((p, i) => {
+    const r = resumenPersona(p.notas);
+    const datos = `${r.faltas} ${r.faltas === 1 ? "falta" : "faltas"} · ${r.duracion}${r.sinReincorporar ? ` · ${r.sinReincorporar} sin reincorporar` : ""}`;
+    return `<div class="sugerencia" role="option" data-i="${i}"><span class="sug-nombre">${escapeHtml(nombreInvestigadoVisible(p, true))}</span><span class="sug-datos">${escapeHtml(datos)}</span></div>`;
+  }).join("");
+  cont.classList.remove("hidden");
+  $("searchNotas").setAttribute("aria-expanded", "true");
+}
+
+function marcarSugerencia(i) {
+  const items = [...$("sugerenciasPersonas").querySelectorAll(".sugerencia")];
+  if (!items.length) return;
+  sugerenciaActiva = (i + items.length) % items.length;
+  items.forEach((el, k) => el.classList.toggle("activa", k === sugerenciaActiva));
+  items[sugerenciaActiva].scrollIntoView({ block: "nearest" });
+}
+
+function elegirPersona(i) {
+  const p = sugerenciasPersonas[i];
+  if (p) seleccionarPersona(p);
+}
+
+// También la usa el Resumen mensual («Ver ficha»), sin pasar por las sugerencias.
+function seleccionarPersona(p) {
+  cerrarSugerenciasPersonas();
+  $("searchNotas").value = `${p.nombres} ${p.apellidos}`.trim();
+  personaFiltrada = p;
+  aplicarFiltrosNotas();
+  mostrarFichaPersona(p);
+}
+
+function mostrarFichaPersona(p) {
+  const r = resumenPersona(p.notas);
+  const enTramite = p.notas.filter((n) => !notaConcluida(n)).length;
+  $("fichaTitulo").textContent = nombreInvestigadoVisible(p, true);
+  $("fichaSubtitulo").textContent = r.primeraFalta
+    ? `Con expedientes desde el ${formatDate(r.primeraFalta)}. Última falta: ${formatDate(r.ultimaFalta)}.`
+    : "";
+  const tile = (valor, etiqueta, nota) => `<div class="stat-tile"><div class="stat-value">${escapeHtml(String(valor))}</div><div class="stat-label">${escapeHtml(etiqueta)}</div>${nota ? `<div class="stat-nota">${escapeHtml(nota)}</div>` : ""}</div>`;
+  $("fichaTiles").innerHTML = [
+    tile(r.faltas, r.faltas === 1 ? "Falta registrada" : "Faltas registradas"),
+    tile(r.duracion, "Tiempo ausente acumulado", [r.enCurso ? `incluye ${r.enCurso} en curso` : "", r.aproximado ? "aprox. en algún caso" : ""].filter(Boolean).join(" · ")),
+    tile(enTramite, "En trámite", r.sinReincorporar ? `${r.sinReincorporar} sin reincorporar` : ""),
+    tile(r.conSancion, "Con sanción"),
+    tile(formatDate(r.ultimaFalta), "Última falta"),
+  ].join("");
+  const codigos = Object.entries(r.porCodigo).sort((a, b) => b[1] - a[1]);
+  $("fichaCodigos").innerHTML = `<span class="ficha-codigos-titulo">Por código</span>`
+    + codigos.map(([c, k]) => `<span class="pill pill-neutral">${escapeHtml(c)} × ${k}</span>`).join("");
+  // «Exportar a Excel» exporta la última lista dibujada: la ficha no debe alterarla.
+  const previa = notasVisibles;
+  renderNotasTable(p.notas, "fichaTableBody", "fichaEmpty", "Esta persona no tiene expedientes.");
+  notasVisibles = previa;
+  $("fichaPersona").classList.remove("hidden");
+  $("fichaPersona").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function cerrarFichaPersona() { $("fichaPersona").classList.add("hidden"); }
+
+$("searchNotas").addEventListener("input", pintarSugerenciasPersonas);
+$("searchNotas").addEventListener("focus", () => { if ($("searchNotas").value.trim().length >= 2) pintarSugerenciasPersonas(); });
+$("searchNotas").addEventListener("keydown", (e) => {
+  const abierto = !$("sugerenciasPersonas").classList.contains("hidden");
+  if (!abierto) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); marcarSugerencia(sugerenciaActiva + 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); marcarSugerencia(sugerenciaActiva - 1); }
+  else if (e.key === "Enter") { e.preventDefault(); elegirPersona(sugerenciaActiva >= 0 ? sugerenciaActiva : 0); }
+  else if (e.key === "Escape") { cerrarSugerenciasPersonas(); }
+});
+// mousedown (no click) para elegir antes de que el buscador pierda el foco.
+$("sugerenciasPersonas").addEventListener("mousedown", (e) => {
+  const el = e.target.closest(".sugerencia");
+  if (el) { e.preventDefault(); elegirPersona(Number(el.dataset.i)); }
+});
+document.addEventListener("click", (e) => { if (!e.target.closest(".search-box")) cerrarSugerenciasPersonas(); });
+$("btnCerrarFicha").addEventListener("click", cerrarFichaPersona);
+
+// ---------- Resumen ejecutivo (IA) ----------
+// Arma, a partir de lo que YA se ve en el dashboard (respetando el filtro de
+// visibilidad por oficial de loadNotas), el estado de cada caso con los datos
+// que sí se registran en notas_informativas — se envían tal cual a la IA, sin
+// inventar campos que la app no trackea (p.ej. "Acta notificada" no existe
+// como estado persistido, así que no se manda).
+function construirResumenEstadoCasos() {
+  return state.notas.map((n) => ({
+    investigado: nombreInvestigadoVisible(n, true),
+    codigo_infraccion: n.codigo_infraccion || null,
+    fecha_hecho: n.fecha_falta || null,
+    reincorporado: !!n.fecha_reincorporacion,
+    imputacion_notificada: !!n.imputacion_generada_at,
+    fecha_notificacion_imputacion: n.imputacion_generada_at ? fechaLima(n.imputacion_generada_at) : null,
+    plazo_descargo_vencido: plazoDescargoVencido(n),
+    descargo_recibido: !!n.fecha_descargo,
+    orden_sancion_generada: !!n.orden_sancion_generada_at,
+    sancion_impuesta: n.sancion_tipo === "amonestacion" ? "amonestación" : (n.sancion_dias ? `${n.sancion_dias} días de sanción simple` : null),
+  }));
+}
+
+async function generarResumenEjecutivo() {
+  const btn = $("btnResumenEjecutivo");
+  const panel = $("resumenEjecutivoPanel");
+  const statusEl = $("resumenEjecutivoStatus");
+  const contenidoEl = $("resumenEjecutivoContenido");
+  panel.classList.remove("hidden");
+  contenidoEl.textContent = "";
+  statusEl.textContent = "Generando resumen ejecutivo con IA...";
+  statusEl.classList.remove("hidden");
+  btn.disabled = true;
+  btn.classList.add("is-busy");
+  try {
+    // A la IA (fuera del Perú) no se le envían nombres: cada investigado va como
+    // "E01", "E02"… y aquí se restauran al recibir el texto (lib/privacidad.js).
+    const { casos, mapa: nombresPorAlias } = seudonimizarInvestigados(construirResumenEstadoCasos());
+    // Sin casos no hay nada que resumir: la IA respondía en prosa (sin el formato
+    // que se le pide) y el resultado era "La IA no devolvió un formato reconocible".
+    if (!casos.length) {
+      statusEl.textContent = "No hay expedientes para resumir todavía.";
+      return;
+    }
+    const { data, error } = await supabase.functions.invoke("generar-resumen-casos", {
+      body: { fechaHoy: hoyLima(), casos },
+    });
+    if (error) throw new Error(await mensajeErrorFuncion(error));
+    if (data?.error) throw new Error(data.error);
+    contenidoEl.textContent = data?.resumen ? restaurarNombres(data.resumen, nombresPorAlias) : "No se pudo generar el resumen.";
+    statusEl.classList.add("hidden");
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudo generar el resumen: " + (err.message || err);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-busy");
+  }
+}
+
+$("btnResumenEjecutivo").addEventListener("click", generarResumenEjecutivo);
+$("btnCerrarResumenEjecutivo").addEventListener("click", () => {
+  $("resumenEjecutivoPanel").classList.add("hidden");
+});
+
+$("btnExportarExcel").addEventListener("click", async (e) => {
+  if (!notasVisibles.length) { toast("No hay expedientes para exportar (revise los filtros).", "info"); return; }
+  const btn = e.currentTarget;
+  ocuparBoton(btn, true, "Generando...");
+  let XLSX;
+  try {
+    XLSX = await import("https://esm.sh/xlsx@0.18.5");
+  } catch (err) {
+    console.error(err); toast("No se pudo cargar el generador de Excel. Revise la conexión.");
+    ocuparBoton(btn, false); return;
+  }
+  const filas = notasVisibles.map((n) => ({
+    "Grado": n.grado || "",
+    "Nombres y apellidos": nombreInvestigadoVisible(n),
+    "Fecha/hora falta": formatFechaHora(n.fecha_falta, n.hora_falta),
+    "N.º nota": n.numero_nota_falta || "",
+    "Oficial": n.oficial_constato || "-",
+    "Fecha/hora reinc.": formatFechaHora(n.fecha_reincorporacion, n.hora_reincorporacion),
+    "N.º nota reinc.": n.numero_nota_reincorporacion || "-",
+    "Tiempo ausente": formatearHorasFalto(n) || "-",
+    "Código infracción": n.codigo_infraccion || "",
+    "Reincorporado": n.fecha_reincorporacion ? "Sí" : "Pendiente",
+  }));
+  const hoja = XLSX.utils.json_to_sheet(filas);
+  hoja["!cols"] = Object.keys(filas[0]).map((k) => ({ wch: Math.max(k.length, 14) }));
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, "Notas informativas");
+  const fecha = hoyLima();
+  XLSX.writeFile(libro, `notas_informativas_${fecha}.xlsx`);
+  ocuparBoton(btn, false);
+});
+
+// ---------- Revisar antes de generar (control de calidad + vista previa) ----------
+// Ubica al investigado de la nota dentro del padrón de Efectivos con el mismo
+// criterio que el resto de la app (>= 2 palabras en común).
+function ubicarInvestigadoEnEfectivos(nota, efectivos) {
+  const objetivo = tokens(`${nota?.apellidos || ""} ${nota?.nombres || ""}`);
+  if (objetivo.length < 2 || !efectivos?.length) return null;
+  let mejor = null, mejorScore = 0;
+  for (const ef of efectivos) {
+    const t = new Set(tokens(ef.apellidos_nombres));
+    const s = objetivo.filter((x) => t.has(x)).length;
+    if (s > mejorScore) { mejorScore = s; mejor = ef; }
+  }
+  return mejorScore >= 2 ? mejor : null;
+}
+
+// Junta en un solo lugar las validaciones que hoy están dispersas
+// (puedeGenerar*, plazos, consistencia código/horas, coincidencia con
+// Efectivos, resumen del descargo) y las devuelve como lista legible. `tipo`
+// es "imputacion" | "acta" | "orden".
+function revisarExpediente(nota, tipo) {
+  const bloqueos = [];
+  const avisos = [];
+  const ef = state.efectivos || [];
+  const codigo = normalizarCodigoInfraccion(nota.codigo_infraccion);
+  const infraccion = getInfraccion(codigo);
+  const esLeve = /^L/i.test((nota.codigo_infraccion || "").trim());
+
+  if (!nota.codigo_infraccion) bloqueos.push("Falta el código de infracción.");
+  else if (!infraccion) bloqueos.push(`El código «${nota.codigo_infraccion}» no está en el Anexo I de infracciones leves.`);
+  else if (!esLeve) avisos.push("El código registrado no es Leve (L…); esta aplicación solo tramita infracciones leves.");
+
+  if (!nota.fecha_falta) bloqueos.push("Falta la fecha de la falta.");
+  if (!nota.numero_nota_falta) bloqueos.push("Falta el N.º de nota de la falta.");
+  if (!nota.hora_falta) avisos.push("No se registró la hora de la falta.");
+
+  if (!nota.fecha_reincorporacion) bloqueos.push("Falta registrar la reincorporación (fecha).");
+  if (!nota.numero_nota_reincorporacion) bloqueos.push("Falta el N.º de nota de reincorporación.");
+  if (nota.fecha_reincorporacion && !nota.hora_reincorporacion) avisos.push("No se registró la hora de reincorporación.");
+
+  if (!nota.oficial_constato) bloqueos.push("No se indicó el oficial que constató la falta.");
+  else if (!buscarOficialConstato(nota.oficial_constato, ef)) bloqueos.push(`El oficial «${nota.oficial_constato}» no se ubicó en Efectivos (revise el apellido).`);
+
+  if (!nota.apellidos || !nota.nombres) bloqueos.push("Faltan apellidos o nombres del investigado.");
+  else if (!ubicarInvestigadoEnEfectivos(nota, ef)) avisos.push(`${nombreInvestigadoVisible(nota)} no se ubicó en Efectivos: su CIP/DNI no se completará en los documentos.`);
+
+  const cons = verificarConsistenciaCodigo(nota);
+  if (cons) avisos.push(`Por el tiempo ausente (${formatearHorasFalto(nota) || "?"}) el código esperado sería ${cons.sugerido}, pero está ${cons.actual}. Verifique fechas y horas.`);
+
+  if (tipo === "acta" || tipo === "orden") {
+    if (!nota.imputacion_generada_at) bloqueos.push("La Imputación aún no se ha notificado (no se ha descargado por primera vez).");
+  }
+  if (tipo === "acta") {
+    if (nota.fecha_descargo) bloqueos.push("El investigado sí presentó descargo: no corresponde el Acta de No Descargo.");
+    else if (nota.imputacion_generada_at && !plazoDescargoVencido(nota)) bloqueos.push(`El plazo de descargo aún está vigente (vence el ${formatDate(fechaLimiteDescargo(nota))}).`);
+  }
+  if (tipo === "orden") {
+    if (!nota.fecha_descargo && !plazoDescargoVencido(nota)) bloqueos.push("Todavía no hay descargo ni ha vencido el plazo: aún no corresponde la Orden.");
+    const descargoActual = $("sSancionDescargo") ? $("sSancionDescargo").value : nota.sancion_descargo_resumen;
+    if (nota.fecha_descargo && esResumenDescargoInsuficiente(descargoActual)) {
+      avisos.push("Hay descargo presentado pero sin resumen: use «Analizar descargo con IA» o redáctelo antes de generar la Orden.");
+    }
+    if (!document.querySelector('input[name="sancionTercio"]:checked')) avisos.push("Aún no ha elegido el tercio de la sanción.");
+    if (!($("sSancionAnalisis")?.value || "").trim()) avisos.push("El Análisis y Evaluación está vacío.");
+  }
+  return { bloqueos, avisos };
+}
+
+const DP_LABEL = {
+  investigado_completo: "Investigado", unidad_investigado: "Unidad",
+  descripcion_hecho: "Descripción del hecho", hecho_completo: "Hecho / caso concreto",
+  bien_juridico: "Bien jurídico", codigo_infraccion_texto: "Código de infracción",
+  codigo_texto: "Código de infracción", sancion_texto: "Rango de sanción", sancion_rango: "Rango de sanción",
+  descargo_texto: "Descargo (resumen)", analisis_texto: "Análisis y evaluación",
+  decision_texto: "Decisión", superior_completo: "Superior / firma",
+  signer_nombre: "Firma (nombre)", signer_grado: "Firma (grado)", signer_oa: "Firma (OA)",
+  oficial_nombre_completo: "Sello (nombre)", oficial_grado_seal: "Sello (grado)",
+  oficial_cip: "Sello (CIP)", oficial_cargo: "Cargo",
+  fecha_larga: "Fecha", fecha_corta: "Fecha (corta)", fecha_larga_punto: "Fecha",
+  superior_apellidos: "Superior (apellidos)", superior_nombres: "Superior (nombres)",
+  superior_grado: "Superior (grado)", superior_cip: "Superior (CIP)", superior_dni: "Superior (DNI)",
+  testigo_apellidos: "Testigo (apellidos)", testigo_nombres: "Testigo (nombres)",
+  testigo_grado: "Testigo (grado)", testigo_cip: "Testigo (CIP)", testigo_dni: "Testigo (DNI)",
+  investigado_apellidos: "Investigado (apellidos)", investigado_nombres: "Investigado (nombres)",
+  investigado_cip: "Investigado (CIP)", investigado_dni: "Investigado (DNI)", investigado_grado: "Investigado (grado)",
+  hora_apertura: "Hora de apertura", hora_cierre: "Hora de cierre",
+};
+const DP_CLAVE = new Set(["investigado_completo", "hecho_completo", "codigo_texto", "codigo_infraccion_texto", "decision_texto", "sancion_rango", "sancion_texto", "signer_nombre", "superior_completo", "analisis_texto", "descargo_texto"]);
+
+function datosDocumento(tipo, nota) {
+  if (tipo === "imputacion") return construirDatosImputacion(nota, state.efectivos);
+  if (tipo === "acta") return construirDatosActaNoDescargo(nota, state.efectivos);
+  if (tipo === "orden") {
+    return construirDatosOrdenSancion(nota, state.efectivos, {
+      tercioValue: document.querySelector('input[name="sancionTercio"]:checked')?.value || "",
+      analisisTexto: $("sSancionAnalisis")?.value.trim() || "",
+      descargoTexto: $("sSancionDescargo")?.value.trim() || "",
+    });
+  }
+  return {};
+}
+
+function datosPreviewHtml(datos) {
+  const filas = Object.entries(datos).map(([k, v]) => {
+    const val = String(v ?? "").trim() || "—";
+    return `<div class="dp-row ${DP_CLAVE.has(k) ? "is-clave" : ""}">
+      <div class="dp-key">${escapeHtml(DP_LABEL[k] || k)}</div>
+      <div class="dp-val">${escapeHtml(val)}</div>
+    </div>`;
+  });
+  return `<div class="datos-preview">${filas.join("")}</div>`;
+}
+
+const REVISION_TITULO = { imputacion: "Revisar la Imputación", acta: "Revisar el Acta de No Descargo", orden: "Revisar la Orden de Sanción" };
+
+function abrirRevision(tipo, nota) {
+  const { bloqueos, avisos } = revisarExpediente(nota, tipo);
+  $("revisionTitulo").textContent = REVISION_TITULO[tipo] || "Revisar antes de generar";
+
+  let datosHtml;
+  try {
+    datosHtml = datosPreviewHtml(datosDocumento(tipo, nota));
+  } catch (err) {
+    datosHtml = `<p class="muted small">No se puede mostrar la vista previa todavía: ${escapeHtml(err.message || String(err))}</p>`;
+  }
+
+  const listaHtml = (items, clase) => items.length
+    ? `<ul class="revision-list">${items.map((t) => `<li class="${clase}">${clase === "is-bloqueo" ? "⛔" : "⚠"} ${escapeHtml(t)}</li>`).join("")}</ul>`
+    : "";
+
+  $("revisionContenido").innerHTML = `
+    <div class="revision-section">
+      <h4>Antes de generar</h4>
+      ${bloqueos.length || avisos.length ? "" : `<div class="revision-ok">✓ No se detectaron problemas. Puede generar el documento.</div>`}
+      ${listaHtml(bloqueos, "is-bloqueo")}
+      ${listaHtml(avisos, "is-aviso")}
+      ${bloqueos.length ? `<p class="muted small" style="margin-top:8px">Los puntos en rojo impiden generar un documento correcto; corríjalos primero.</p>` : ""}
+    </div>
+    <div class="revision-section">
+      <h4>Datos que se insertarán</h4>
+      ${datosHtml}
+    </div>
+  `;
+  $("modalRevision").classList.remove("hidden");
+}
+
+function cerrarRevision() { $("modalRevision").classList.add("hidden"); }
+$("btnCerrarRevision").addEventListener("click", cerrarRevision);
+$("modalRevision").addEventListener("click", (e) => { if (e.target === $("modalRevision")) cerrarRevision(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("modalRevision").classList.contains("hidden")) cerrarRevision();
+});
+
+// ---------- Nota detail ----------
+async function openNotaDetail(id) {
+  const { data: nota, error } = await supabase
+    .from("notas_informativas")
+    .select("*, expedientes(*)")
+    .eq("id", id)
+    .single();
+  if (error) { console.error(error); toast("No se pudo abrir el expediente: " + (error.message || "error de red o de sesión") + "."); return; }
+  state.currentNotaId = id;
+  await renderNotaDetail(nota);
+  showView("view-nota-detail");
+}
+
+async function fileLinkHtml(bucket, path, name) {
+  if (!path) return '<span class="muted small">No adjuntado</span>';
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 300);
+  if (error || !data) return '<span class="muted small">Error al obtener archivo</span>';
+  return `<a class="file-link" href="${data.signedUrl}" target="_blank" rel="noopener">📎 ${escapeHtml(name || "Ver archivo")}</a>`;
+}
+
+async function renderNotaDetail(nota) {
+  const exp = (nota.expedientes && nota.expedientes[0]) || null;
+  const isAdmin = state.role === "admin";
+  const esDuenoDeLaNota = !!state.cip && nota.oficial_constato_cip === state.cip;
+
+  const notaArchivo = await fileLinkHtml("notas", nota.archivo_nota_path, nota.archivo_nota_nombre);
+  const reincArchivo = await fileLinkHtml("notas", nota.archivo_reincorporacion_path, nota.archivo_reincorporacion_nombre);
+  const expArchivo = exp ? await fileLinkHtml("expedientes", exp.archivo_expediente_path, exp.archivo_expediente_nombre) : "";
+  const descargoArchivo = await fileLinkHtml("notas", nota.archivo_descargo_path, nota.archivo_descargo_nombre);
+  const ordenNotifArchivo = await fileLinkHtml("notas", nota.archivo_orden_notificacion_path, nota.archivo_orden_notificacion_nombre);
+
+  const { data: versionesDocs } = await supabase
+    .from("documentos_generados")
+    .select("*")
+    .eq("nota_id", nota.id)
+    .order("generado_at", { ascending: false });
+  const TIPO_DOCUMENTO_LABEL = { imputacion: "Imputación", acta_no_descargo: "Acta de No Descargo", orden_sancion: "Orden de Sanción", archivo_leve: "Archivo del Procedimiento" };
+  const versionesHtml = versionesDocs?.length
+    ? (await Promise.all(versionesDocs.map(async (v) => {
+        const link = await fileLinkHtml("notas", v.archivo_path, v.archivo_nombre);
+        return `<div class="detail-field"><div class="label">${escapeHtml(TIPO_DOCUMENTO_LABEL[v.tipo] || v.tipo)} — ${formatFechaHora(fechaLima(v.generado_at), horaLima(v.generado_at))}</div><div class="value">${link} <span class="muted small">(${escapeHtml(v.generado_por_email || "-")})</span></div></div>`;
+      }))).join("")
+    : "";
+
+  // "Continúan faltos": las notas de los días intermedios en que siguió sin
+  // presentarse. Se guardaban en seguimiento_faltas pero no se mostraban en
+  // ninguna parte de la pantalla.
+  const seguimiento = entradasSeguimiento(nota);
+  const seguimientoHtml = seguimiento.length
+    ? (await Promise.all(seguimiento.map(async (s) => {
+        const link = await fileLinkHtml("notas", s.archivo_path, s.archivo_nombre);
+        return `<div class="detail-field"><div class="label">${escapeHtml(formatDate(s.fecha))} — N.º ${escapeHtml(s.numero_nota || "-")}</div><div class="value">${link}${s.oficial_constato ? ` <span class="muted small">(${escapeHtml(s.oficial_constato)})</span>` : ""}</div></div>`;
+      }))).join("")
+    : "";
+
+  // Cierre administrativo: el PDF firmado, HT y Oficio del expediente cerrado
+  // se registran en la pestaña Recepción, pero el admin también los ve aquí.
+  const cerrado = nota.orden_sancion_generada_at && nota.orden_notificada_at;
+  const { data: expedienteCerrado } = (isAdmin && cerrado)
+    ? await supabase.from("expedientes_remitidos").select("*").eq("nota_id", nota.id).maybeSingle()
+    : { data: null };
+  const cierreArchivo = expedienteCerrado ? await fileLinkHtml("expedientes-terminados-pnp", expedienteCerrado.archivo_path, expedienteCerrado.archivo_nombre) : "";
+  const cierreHt = expedienteCerrado ? await fileLinkHtml("expedientes-terminados-pnp", expedienteCerrado.archivo_ht_path, expedienteCerrado.archivo_ht_nombre) : "";
+  const cierreOficio = expedienteCerrado ? await fileLinkHtml("expedientes-terminados-pnp", expedienteCerrado.archivo_oficio_path, expedienteCerrado.archivo_oficio_nombre) : "";
+
+  const actaGenerada = (versionesDocs || []).some((v) => v.tipo === "acta_no_descargo");
+  const puedeDescargar = puedeGenerarImputacion(nota, state.efectivos);
+  const codigoEsLeve = /^L/i.test((nota.codigo_infraccion || "").trim());
+  const puedeActa = puedeGenerarActaNoDescargo(nota, state.efectivos);
+  const plazoVencido = plazoDescargoVencido(nota);
+  const fechaLimite = fechaLimiteDescargo(nota);
+  const puedeSancion = puedeGenerarOrdenSancion(nota, state.efectivos);
+  const opcionesSancion = opcionesTercio(nota.codigo_infraccion) || [];
+  const puedeArchivo = puedeGenerarArchivoLeve(nota, state.efectivos);
+  const avisoConsistencia = verificarConsistenciaCodigo(nota);
+  const puedeInformeAdmin = puedeGenerarInformeAdministrativo(nota, state.efectivos);
+  const yoMismoInforme = state.cip ? state.efectivos.find((ef) => ef.cip === state.cip) : null;
+  const severidadInforme = INFRACCIONES_GRAVES[String(nota.codigo_infraccion || "").toUpperCase().replace(/\s+/g, "")]?.severidad || "GRAVE";
+
+  $("notaDetailContent").innerHTML = `
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <h3>${escapeHtml(nombreInvestigadoVisible(nota, true))}</h3>
+        ${codigoEsLeve ? `
+          <button type="button" class="btn-ghost" id="btnRevisarImputacion">🔍 Revisar</button>
+          <button type="button" class="btn-secondary" id="btnDescargarImputacion" ${puedeDescargar ? "" : "disabled"}>${svgIco("descargar")}Descargar Imputación</button>
+        ` : ""}
+      </div>
+      ${siguienteAccionNotaHtml(nota, isAdmin, actaGenerada)}
+      <div class="timeline-card">
+        <div class="detail-card-header"><h3>Ruta del trámite</h3><span class="muted small">Estado por etapa</span></div>
+        ${cronologiaNotaHtml(nota)}
+      </div>
+      ${avisoConsistencia ? `<p class="error small">⚠ Según las horas transcurridas entre la falta y la reincorporación (${formatearHorasFalto(nota)}), el código esperado sería <strong>${avisoConsistencia.sugerido}</strong>, pero el registrado es <strong>${escapeHtml(avisoConsistencia.actual)}</strong>. Verifique la fecha/hora de falta y de reincorporación (pueden venir mal leídas de un PDF/OCR) antes de generar los documentos.</p>` : ""}
+      ${codigoEsLeve && !puedeDescargar ? `<p class="muted small">Para poder generar el documento, complete la reincorporación (fecha, hora y N.º de nota) y verifique que el oficial que constató la falta ("${escapeHtml(nota.oficial_constato || "")}") esté registrado en Efectivos.</p>` : ""}
+      <div class="detail-grid">
+        <div class="detail-field"><div class="label">Fecha de falta</div><div class="value">${formatDate(nota.fecha_falta)}</div></div>
+        <div class="detail-field"><div class="label">Hora de falta</div><div class="value">${escapeHtml((nota.hora_falta || "").slice(0, 5) || "-")}</div></div>
+        <div class="detail-field"><div class="label">N.º de nota</div><div class="value">${escapeHtml(nota.numero_nota_falta || "-")}</div></div>
+        <div class="detail-field">
+          <div class="label">Código de infracción</div>
+          <div class="value">
+            ${isAdmin ? `
+              <form id="codigoInfraccionForm" class="inline-edit">
+                <input type="text" id="fCodigoInfraccionEdit" value="${escapeHtml(nota.codigo_infraccion || "")}" placeholder="Pendiente" />
+                <button type="submit" class="btn-secondary">Guardar</button>
+              </form>
+              <p id="codigoInfraccionMsg" class="error small hidden" role="alert"></p>
+            ` : escapeHtml(nota.codigo_infraccion || "Pendiente")}
+          </div>
+        </div>
+        <div class="detail-field"><div class="label">Oficial que constató</div><div class="value">${escapeHtml(nota.oficial_constato || "-")}</div></div>
+        <div class="detail-field">
+          <div class="label">Puesto / servicio según el rol</div>
+          <div class="value">
+            ${isAdmin ? `
+              <form id="puestoRolForm" class="inline-edit">
+                <input type="text" id="fPuestoRolEdit" value="${escapeHtml(nota.puesto_rol || "")}" placeholder="Sin registrar" />
+                <button type="submit" class="btn-secondary">Guardar</button>
+              </form>
+              <p id="puestoRolMsg" class="error small hidden" role="alert"></p>
+            ` : escapeHtml(nota.puesto_rol || "-")}
+          </div>
+        </div>
+        <div class="detail-field"><div class="label">Archivo de la nota</div><div class="value">${notaArchivo}</div></div>
+      </div>
+      ${isAdmin ? `<button class="btn-danger" id="btnEliminarNota">Eliminar nota</button>` : ""}
+    </div>
+
+    ${seguimientoHtml ? `
+    <div class="detail-card">
+      <h3>Continúan faltos</h3>
+      <p class="muted small">Notas de los días en que siguió sin presentarse (${seguimiento.length} ${seguimiento.length === 1 ? "día" : "días"}).</p>
+      <div class="detail-grid">${seguimientoHtml}</div>
+    </div>` : ""}
+
+    <div class="detail-card">
+      <h3>Reincorporación</h3>
+      ${nota.fecha_reincorporacion ? `
+        <div class="detail-grid">
+          <div class="detail-field"><div class="label">Fecha de reincorporación</div><div class="value">${formatDate(nota.fecha_reincorporacion)}</div></div>
+          <div class="detail-field"><div class="label">Hora de reincorporación</div><div class="value">${escapeHtml((nota.hora_reincorporacion || "").slice(0, 5) || "-")}</div></div>
+          <div class="detail-field"><div class="label">N.º de nota de reincorporación</div><div class="value">${escapeHtml(nota.numero_nota_reincorporacion || "-")}</div></div>
+          <div class="detail-field"><div class="label">Tiempo ausente</div><div class="value">${formatearHorasFalto(nota) || "-"}</div></div>
+          <div class="detail-field"><div class="label">Archivo</div><div class="value">${reincArchivo}</div></div>
+        </div>
+        ${nota.reincorporacion_observacion ? `<p class="ai-box ai-box-warning" style="margin-top:12px">⚕ ${escapeHtml(nota.reincorporacion_observacion)}</p>` : ""}
+      ` : `
+        <p class="muted small">Aún no ha sido reincorporado.</p>
+        ${isAdmin ? `
+        <form id="reincForm">
+          <div class="grid-2">
+            <label>Fecha de reincorporación<input type="date" id="rFecha" required /></label>
+            <label>N.º de nota de reincorporación<input type="text" id="rNumero" required /></label>
+          </div>
+          <label>Hora de reincorporación<input type="time" id="rHora" /></label>
+          <label>Observación (opcional — p.ej. descanso médico expedido por Sanidad, no se presentó físicamente)
+            <textarea id="rObservacion" rows="2" placeholder="Déjelo en blanco si se reincorporó físicamente sin ninguna circunstancia particular."></textarea>
+          </label>
+          <label>Archivo de reincorporación<input type="file" id="rArchivo" accept="application/pdf,image/*" /></label>
+          <p id="reincAutoStatus" class="muted small hidden"></p>
+          <p id="reincError" class="error hidden" role="alert"></p>
+          <button type="submit" class="btn-primary">Registrar reincorporación</button>
+        </form>` : ""}
+      `}
+    </div>
+
+    ${codigoEsLeve ? `
+    <div class="detail-card">
+      <h3>Acta de No Descargo</h3>
+      <div class="detail-field" style="margin-bottom:14px">
+        <div class="label">Fecha de notificación de la Imputación</div>
+        <div class="value">
+          <form id="notificacionForm" class="inline-edit">
+            <input type="date" id="fNotificacion" value="${nota.imputacion_generada_at ? fechaLima(nota.imputacion_generada_at) : ""}" required />
+            <button type="submit" class="btn-secondary">Guardar</button>
+          </form>
+          <p id="notificacionMsg" class="error small hidden" role="alert"></p>
+        </div>
+      </div>
+      ${!nota.imputacion_generada_at ? `
+        <p class="muted small">Registre la fecha en que notificó la Imputación para calcular el plazo de descargo.</p>
+      ` : nota.fecha_descargo ? `
+        <p class="muted small">El investigado sí presentó descargo — no corresponde generar el acta.</p>
+        <div class="detail-grid">
+          <div class="detail-field"><div class="label">Fecha de descargo</div><div class="value">${formatDate(nota.fecha_descargo)}</div></div>
+          <div class="detail-field"><div class="label">N.º de documento</div><div class="value">${escapeHtml(nota.numero_descargo || "-")}</div></div>
+          <div class="detail-field"><div class="label">Archivo</div><div class="value">${descargoArchivo}</div></div>
+        </div>
+        <button type="button" class="btn-danger" id="btnQuitarDescargo" style="margin-top:12px">Quitar descargo</button>
+        <p class="muted small">Úselo si se registró por error (p. ej. se subió el archivo de otro efectivo). Se borra la fecha, el N.º, el archivo y el resumen del descargo; el resto del expediente no cambia.</p>
+      ` : `
+        <p class="muted small">Plazo de descargo vence el ${formatDate(fechaLimite)}.</p>
+        ${plazoVencido ? `
+          <button type="button" class="btn-ghost" id="btnRevisarActa">🔍 Revisar</button>
+          ${puedeActa ? `<button type="button" class="btn-secondary" id="btnDescargarActaDetalle">${svgIco("descargar")}Descargar Acta de No Descargo</button>` : `<p class="muted small">Venció el plazo, pero no se pudo ubicar en Efectivos al oficial o al investigado para generar el acta. Use «Revisar» para ver qué falta.</p>`}
+        ` : `<p class="muted small">El plazo aún está vigente, todavía no corresponde generar el acta.</p>`}
+        <form id="descargoForm">
+          <p class="muted small">Si el investigado sí presenta su descargo, regístrelo aquí para que ya no se genere el acta:</p>
+          <div class="grid-2">
+            <label>Fecha de descargo<input type="date" id="dFecha" required /></label>
+            <label>N.º de documento<input type="text" id="dNumero" /></label>
+          </div>
+          <label>Archivo del descargo<input type="file" id="dArchivo" /></label>
+          <p id="descargoError" class="error hidden" role="alert"></p>
+          <button type="submit" class="btn-secondary">Registrar descargo recibido</button>
+        </form>
+      `}
+    </div>
+    ` : ""}
+
+    ${codigoEsLeve && (nota.fecha_descargo || plazoVencido) && !nota.archivo_leve_generada_at ? `
+    <div class="detail-card">
+      <h3>Orden de Sanción</h3>
+      ${puedeSancion ? `
+        <form id="sancionForm">
+          <div class="label" style="margin-bottom:8px">Sanción a imponer (la elige usted evaluando el descargo${nota.fecha_descargo ? "; la IA solo puede sugerir una, sin marcarla" : ""})</div>
+          ${opcionesSancion.map((o) => {
+            const marcado = (o.value === "amonestacion" && nota.sancion_tipo === "amonestacion") ||
+              (nota.sancion_tipo === "dias" && String(nota.sancion_dias) === o.value);
+            return `<label class="checkbox-row"><input type="radio" name="sancionTercio" value="${o.value}" ${marcado ? "checked" : ""} required /> ${escapeHtml(o.label)}</label>`;
+          }).join("")}
+          <p id="sancionSugerenciaIA" class="muted small hidden" role="status"></p>
+          <label>Descargo del investigado (resumen de puntos relevantes y argumentos de defensa${nota.fecha_descargo ? " — deje en blanco y presione \"Redactar con IA\" para que se lea solo del archivo subido" : ""})
+            <textarea id="sSancionDescargo" rows="4" placeholder="${nota.fecha_descargo ? "Primero use 'Redactar con IA' o escriba un resumen propio. No copie el descargo completo." : ""}">${escapeHtml(nota.sancion_descargo_resumen || (nota.fecha_descargo ? "" : "El investigado no presentó su descargo por escrito dentro del plazo de un (01) día hábil establecido por ley, conforme acta respectiva, precluyendo su derecho a la defensa en la presente etapa procedimental."))}</textarea>
+          </label>
+          <label>Análisis y evaluación ${nota.fecha_descargo ? "(notas sueltas o texto final)" : "(se completa solo al elegir el tercio; puede editarlo si lo desea)"}
+            <textarea id="sSancionAnalisis" rows="6" required placeholder="Anote en sus palabras: qué se acredita, qué alega el investigado, y por qué corresponde el tercio elegido... o escriba el texto final directamente.">${escapeHtml(nota.sancion_analisis || "")}</textarea>
+          </label>
+          ${nota.fecha_descargo ? `
+          <div class="modal-actions" style="justify-content:flex-start; margin-bottom:10px">
+            <button type="button" class="btn-secondary" id="btnRedactarIA">${svgIco("ia")}Analizar descargo y redactar con IA</button>
+          </div>
+          <p class="muted small">La IA redacta el resumen del descargo y el análisis, y puede sugerir un tercio, pero no lo marca: la sanción la elige usted. Usa las directivas internas activas como única fuente de reglas institucionales — si el descargo invoca algo que ninguna directiva regula, la IA lo dice en vez de inventarlo.</p>
+          <label class="checkbox-row"><input type="checkbox" id="sSancionAvisoIA" /> Dejar constancia en la Orden de que el análisis se redactó con apoyo de inteligencia artificial y fue revisado por el funcionario firmante</label>
+          <p id="sancionIAStatus" class="muted small hidden"></p>
+          ` : `
+          <div class="modal-actions" style="justify-content:flex-start; margin-bottom:6px">
+            <button type="button" class="btn-secondary" id="btnTextoEstandarSinDescargo">Poner texto estándar (sin descargo)</button>
+          </div>
+          <p class="muted small">Sin descargo: elija el tercio arriba y el texto se completa solo; o use el botón para ponerlo/reemplazarlo. Puede editarlo antes de generar.</p>`}
+          <p id="sancionError" class="error hidden" role="alert"></p>
+          <div class="modal-actions" style="justify-content:flex-start">
+            <button type="button" class="btn-ghost" id="btnRevisarOrden">🔍 Revisar antes de generar</button>
+            <button type="submit" class="btn-primary">Guardar y descargar Orden de Sanción</button>
+          </div>
+        </form>
+        ${nota.orden_sancion_generada_at ? `<p class="muted small">Generada por última vez el ${formatDate(fechaLima(nota.orden_sancion_generada_at))}.</p>` : ""}
+      ` : `<p class="muted small">Para generar la Orden de Sanción, verifique que el oficial que constató la falta y el investigado estén registrados en Efectivos.</p>`}
+    </div>
+    ` : ""}
+
+    ${codigoEsLeve && nota.fecha_descargo && !nota.orden_sancion_generada_at ? `
+    <div class="detail-card">
+      <h3>Archivo del Procedimiento (sin sanción)</h3>
+      <p class="muted small">Úselo cuando, tras evaluar el descargo, la conducta NO se adecúa a ningún código del Anexo I — cierra el caso sin sanción (Anexo IV de la Resolución IGPNP N° 29-2026-IGPNP/SEC-UNIPLA). Es la alternativa a la Orden de Sanción: solo se puede generar una de las dos.</p>
+      ${puedeArchivo ? `
+        <form id="archivoLeveForm">
+          <p class="muted small">${nota.archivo_leve_resolucion_numero
+            ? `N.º de Resolución asignado: <strong>${escapeHtml(nota.archivo_leve_resolucion_numero)}</strong>`
+            : "El N.º de Resolución se asigna automáticamente al generar el documento — es correlativo y nunca se repite, sin importar qué oficial lo genere."}</p>
+          <label>Motivo del archivo (por qué la conducta no se adecúa a ningún código)
+            <textarea id="alMotivo" rows="5" required placeholder="Explique en sus palabras por qué, tras evaluar el descargo y los actuados, la conducta no encaja en ninguna infracción del Anexo I.">${escapeHtml(nota.archivo_leve_motivo || "")}</textarea>
+          </label>
+          <p id="archivoLeveError" class="error hidden" role="alert"></p>
+          <button type="submit" class="btn-primary">Guardar y descargar Archivo del Procedimiento</button>
+        </form>
+        ${nota.archivo_leve_generada_at ? `<p class="muted small">Generado por última vez el ${formatDate(fechaLima(nota.archivo_leve_generada_at))}.</p>` : ""}
+      ` : `<p class="muted small">Para generarlo, verifique que el oficial que constató la falta esté registrado en Efectivos.</p>`}
+    </div>
+    ` : ""}
+
+    ${!codigoEsLeve && isAdmin && (nota.codigo_infraccion || "").trim() ? `
+    <div class="detail-card">
+      <h3>Informe Administrativo (infracción ${escapeHtml(severidadInforme)})</h3>
+      ${puedeInformeAdmin ? `
+        <p class="muted small">El código registrado (${escapeHtml(nota.codigo_infraccion)}) corresponde a una infracción ${escapeHtml(severidadInforme)} — fuera del alcance de esta app, que solo tramita leves hasta la Orden de Sanción. Este informe no sanciona nada aquí: documenta la ausencia y la REMITE al órgano disciplinario competente. Se descarga un <strong>.zip</strong> con el informe y, si están subidos, las Notas Informativas y los Roles de Servicio de cada día del periodo — listo para remitir.</p>
+        <form id="informeAdminForm">
+          <p class="form-section-title" style="margin-top:0">Firmas — 2 personas: quien da la conformidad, y usted como instructor</p>
+          <p class="muted small" style="margin-bottom:6px"><strong>1. Quien firma "ES CONFORME"</strong> (Comisario u otro mando — una sola persona, estos 3 campos son sus datos)</p>
+          <div class="grid-2">
+            <label>Grado<input type="text" id="iaConformeGrado" placeholder="Ej. MAY. PNP" /></label>
+            <label>Nombre<input type="text" id="iaConformeNombre" required placeholder="Ej. VARGAS SOTO, Mario Enrique" /></label>
+          </div>
+          <label>Cargo<input type="text" id="iaConformeCargo" placeholder="Ej. Jefe de la unidad" /></label>
+          <p class="muted small" style="margin-bottom:6px"><strong>2. Instructor</strong> (usted)</p>
+          <div class="grid-2">
+            <label>Grado<input type="text" id="iaInstructorGrado" value="${escapeHtml(yoMismoInforme?.grado || "")}" /></label>
+            <label>Nombre<input type="text" id="iaInstructorNombre" required value="${escapeHtml(yoMismoInforme?.apellidos_nombres || "")}" /></label>
+          </div>
+          <p id="informeAdminError" class="error hidden" role="alert"></p>
+          <button type="submit" class="btn-primary">${svgIco("descargar")}Generar Informe Administrativo (.zip)</button>
+        </form>
+      ` : `<p class="muted small">Para generar el informe, complete primero la fecha/hora/N.º de nota de la falta (y, si ya se registró la reincorporación, que esté completa). No es obligatorio esperar a la reincorporación: si la ausencia sigue en curso, el informe la documenta "a la fecha de elaboración".</p>`}
+    </div>
+    ` : ""}
+
+    ${(isAdmin || esDuenoDeLaNota) && nota.orden_sancion_generada_at ? `
+    <div class="detail-card">
+      <h3>Cargo del expediente firmado</h3>
+      ${nota.orden_notificada_at ? `
+        <p class="muted small">Registrado el ${formatDate(fechaLima(nota.orden_notificada_at))}.</p>
+        ${ordenNotifArchivo ? `<div class="detail-field"><div class="label">Legajo firmado</div><div class="value">${ordenNotifArchivo}</div></div>` : ""}
+        ${nota.archivo_descargo_path ? `<div class="detail-field"><div class="label">Descargo firmado (adjunto)</div><div class="value">${descargoArchivo}</div></div>` : ""}
+      ` : `
+        <p class="muted small">Suba el legajo completo firmado en un solo PDF: Imputación, notificación de la imputación, ${nota.fecha_descargo ? "descargo del investigado" : "Acta de No Descargo"}, Orden de Sanción y cargo de notificación firmado. La IA revisa que estén todos antes de guardar.</p>
+        ${nota.archivo_descargo_path ? `<p class="campo-guardado">✓ El descargo firmado ya está registrado (${escapeHtml(nota.archivo_descargo_nombre || "archivo")}) y queda adjunto a este expediente — no hace falta volver a subirlo.</p>` : ""}
+        <form id="ordenNotifForm">
+          <label>Cargo del expediente firmado (un solo PDF con todos los documentos)
+            <input type="file" id="fOrdenNotifArchivo" accept="application/pdf,image/*" required />
+          </label>
+          <div class="modal-actions" style="justify-content:flex-start; margin:8px 0">
+            <button type="button" class="btn-secondary" id="btnVerificarNotifIA">${svgIco("ia")}Verificar con IA que esté completo</button>
+          </div>
+          <p id="ordenNotifIAStatus" class="muted small hidden"></p>
+          <label>Fecha de notificación (la completa la IA si la detecta; verifíquela)
+            <input type="date" id="fOrdenNotifFecha" required />
+          </label>
+          <p id="ordenNotifError" class="error hidden" role="alert"></p>
+          <button type="submit" class="btn-primary">Registrar</button>
+        </form>
+      `}
+    </div>
+    ` : ""}
+
+    ${isAdmin ? `
+    <div class="detail-card">
+      <h3>Expediente</h3>
+      ${exp ? `
+        <div class="detail-grid">
+          <div class="detail-field"><div class="label">N.º de oficio</div><div class="value">${escapeHtml(exp.numero_oficio || "-")}</div></div>
+          <div class="detail-field"><div class="label">N.º de HT</div><div class="value">${escapeHtml(exp.numero_ht || "-")}</div></div>
+          <div class="detail-field"><div class="label">Días de sanción</div><div class="value">${exp.dias_sancion ?? "-"}</div></div>
+          <div class="detail-field"><div class="label">Archivo</div><div class="value">${expArchivo}</div></div>
+        </div>
+      ` : `
+        <p class="muted small">Sin expediente registrado.</p>
+        <form id="expForm">
+          <div class="grid-2">
+            <label>N.º de oficio<input type="text" id="eOficio" required /></label>
+            <label>N.º de HT<input type="text" id="eHt" required /></label>
+          </div>
+          <label>Días de sanción<input type="number" id="eDias" min="0" /></label>
+          <label>Archivo del expediente<input type="file" id="eArchivo" /></label>
+          <p id="expError" class="error hidden" role="alert"></p>
+          <button type="submit" class="btn-primary">Registrar expediente</button>
+        </form>
+      `}
+    </div>
+    ` : ""}
+
+    ${versionesDocs?.length ? `
+    <div class="detail-card">
+      <h3>Versiones generadas</h3>
+      <p class="muted small">Cada vez que se genera un documento queda archivada esta copia exacta, aunque después se regenere con datos distintos.</p>
+      <div class="detail-grid">${versionesHtml}</div>
+    </div>
+    ` : ""}
+
+    ${isAdmin && cerrado ? `
+    <div class="detail-card cierre-administrativo-card">
+      <div class="detail-card-header"><div><span class="eyebrow">Cierre administrativo</span><h3>Expediente firmado, HT y Oficio</h3></div><span class="reception-status">${escapeHtml(expedienteCerrado ? etiquetaEstadoRecepcion(expedienteCerrado.estado) : "Pendiente de registro")}</span></div>
+      ${expedienteCerrado ? `
+        <div class="detail-grid">
+          <div class="detail-field"><div class="label">Expediente firmado</div><div class="value">${cierreArchivo}</div></div>
+          <div class="detail-field"><div class="label">HT</div><div class="value">${cierreHt}</div></div>
+          <div class="detail-field"><div class="label">Oficio</div><div class="value">${cierreOficio}</div></div>
+          <div class="detail-field"><div class="label">Carpeta de archivo</div><div class="value storage-path">${escapeHtml(expedienteCerrado.carpeta_archivo || "-")}</div></div>
+        </div>
+        ${expedienteCerrado.observacion ? `<p class="reception-observation"><b>Observación:</b> ${escapeHtml(expedienteCerrado.observacion)}</p>` : ""}
+      ` : `<p class="muted small">El expediente está cerrado pero aún no se registró en Recepción. Regístrelo allí para adjuntar el PDF firmado, el HT y el Oficio.</p>`}
+      <button type="button" id="btnAbrirRecepcionDesdeNota" class="btn-secondary" style="margin-top:10px">Abrir Recepción</button>
+    </div>
+    ` : ""}
+  `;
+
+  $("btnDescargarImputacion")?.addEventListener("click", async (e) => {
+    await handleDescargarImputacion(nota, e.currentTarget);
+    openNotaDetail(nota.id);
+  });
+  $("btnDescargarActaDetalle")?.addEventListener("click", (e) => handleDescargarActaNoDescargo(nota, e.currentTarget));
+  $("btnAbrirRecepcionDesdeNota")?.addEventListener("click", () => { showView("view-recepcion"); loadNotas().then(loadExpedientesRemitidos); });
+  $("btnRevisarImputacion")?.addEventListener("click", () => abrirRevision("imputacion", nota));
+  $("btnRevisarActa")?.addEventListener("click", () => abrirRevision("acta", nota));
+  $("btnRevisarOrden")?.addEventListener("click", () => abrirRevision("orden", nota));
+  // Registrar la notificación y el descargo lo puede hacer cualquier usuario
+  // autenticado (cada oficial notifica en persona y marca su propio caso),
+  // no solo admin como el resto de la edición de la nota.
+  $("notificacionForm")?.addEventListener("submit", (e) => submitNotificacion(e, nota.id));
+  $("descargoForm")?.addEventListener("submit", (e) => submitDescargo(e, nota.id));
+  $("btnQuitarDescargo")?.addEventListener("click", () => quitarDescargo(nota));
+  $("sancionForm")?.addEventListener("submit", (e) => submitSancion(e, nota));
+  $("archivoLeveForm")?.addEventListener("submit", (e) => submitArchivoLeve(e, nota));
+  $("btnRedactarIA")?.addEventListener("click", () => redactarConIA(nota));
+  $("btnVerificarNotifIA")?.addEventListener("click", () => verificarNotificacionOrdenIA(nota));
+  $("ordenNotifForm")?.addEventListener("submit", (e) => submitNotificacionOrden(e, nota));
+
+  // Si no hubo descargo, al elegir el tercio se rellena el "Análisis y
+  // Evaluación" con el párrafo estándar (venció el plazo...) cerrando según
+  // el extremo (mínimo/medio/máximo) elegido. Solo se pisa el campo si sigue
+  // vacío o si su contenido fue puesto por este mismo autocompletado (no si
+  // el oficial ya escribió algo a mano).
+  const analisisEl = $("sSancionAnalisis");
+  if (analisisEl && !nota.fecha_descargo) {
+    document.querySelectorAll('input[name="sancionTercio"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        const esVacioOAutocompletado = !analisisEl.value.trim() || analisisEl.dataset.autofilled === "true";
+        if (esVacioOAutocompletado) {
+          analisisEl.value = analisisSinDescargoDefault(nota.codigo_infraccion, radio.value);
+          analisisEl.dataset.autofilled = "true";
+        }
+      });
+    });
+    // Un input real del usuario (no un .value asignado por JS) sí dispara este
+    // evento, así que basta para distinguir "lo escribió el oficial" de
+    // "lo puso el autocompletado".
+    analisisEl.addEventListener("input", () => {
+      analisisEl.dataset.autofilled = "false";
+    });
+    // Botón para poner/reemplazar con el párrafo estándar de "sin descargo"
+    // (útil cuando quedó texto viejo de un descargo que se quitó por error).
+    $("btnTextoEstandarSinDescargo")?.addEventListener("click", () => {
+      const tercio = document.querySelector('input[name="sancionTercio"]:checked')?.value;
+      if (!tercio) { $("sancionError").textContent = "Elija primero el tercio de la sanción."; $("sancionError").classList.remove("hidden"); return; }
+      $("sancionError").classList.add("hidden");
+      analisisEl.value = analisisSinDescargoDefault(nota.codigo_infraccion, tercio);
+      analisisEl.dataset.autofilled = "true";
+    });
+  }
+
+  activarAutoguardadoSancion(nota);
+
+  if (isAdmin) {
+    $("btnEliminarNota")?.addEventListener("click", () => eliminarNota(nota.id));
+    $("codigoInfraccionForm")?.addEventListener("submit", (e) => submitCodigoInfraccion(e, nota.id));
+    $("puestoRolForm")?.addEventListener("submit", (e) => submitPuestoRol(e, nota.id));
+    $("reincForm")?.addEventListener("submit", (e) => submitReincorporacion(e, nota.id));
+    $("informeAdminForm")?.addEventListener("submit", (e) => submitInformeAdministrativo(e, nota));
+    $("rArchivo")?.addEventListener("change", (e) => autocompletarReincorporacion(e.target.files[0]));
+    $("expForm")?.addEventListener("submit", (e) => submitExpediente(e, nota.id));
+  }
+}
+
+async function submitNotificacion(e, notaId) {
+  e.preventDefault();
+  const msgEl = $("notificacionMsg");
+  msgEl.classList.add("hidden");
+  const fecha = $("fNotificacion").value;
+  if (!fecha) return;
+  const { error } = await supabase.rpc("registrar_notificacion_imputacion", { p_nota_id: notaId, p_fecha: fecha });
+  if (error) { msgEl.textContent = "Error: " + error.message; msgEl.classList.remove("hidden"); return; }
+  openNotaDetail(notaId);
+}
+
+// Casos previos del mismo investigado ya registrados en el sistema (mismo
+// criterio de emparejamiento por nombre que usa el resto de la app: al menos
+// 2 palabras en común entre apellidos y nombres). Se le pasa a la IA como
+// posible agravante, igual que en notificacion-imputacion-pnp.
+function buscarAntecedentes(nota, todasNotas) {
+  if (!nota?.apellidos || !todasNotas?.length) return [];
+  const objetivo = tokens(`${nota.apellidos} ${nota.nombres || ""}`);
+  if (!objetivo.length) return [];
+  return todasNotas
+    .filter((n) => n.id !== nota.id)
+    .filter((n) => {
+      const t = new Set(tokens(`${n.apellidos || ""} ${n.nombres || ""}`));
+      return objetivo.filter((tok) => t.has(tok)).length >= 2;
+    })
+    .map((n) => ({ codigo_infraccion: n.codigo_infraccion || null, fecha_falta: n.fecha_falta || null }))
+    .sort((a, b) => (b.fecha_falta || "").localeCompare(a.fecha_falta || ""));
+}
+
+// A diferencia de la versión anterior, la IA ya no solo redacta un tercio que
+// el oficial eligió a mano: ahora ELLA misma evalúa el descargo (apoyada en
+// las directivas internas cargadas y los antecedentes del investigado) y
+// elige el tercio, marcando el radio correspondiente. El oficial sigue
+// revisando y puede cambiar la selección o el texto antes de guardar — el
+// botón "Guardar y descargar" sigue siendo el paso final manual.
+async function redactarConIA(nota) {
+  const btn = $("btnRedactarIA");
+  const statusEl = $("sancionIAStatus");
+  const errEl = $("sancionError");
+  errEl.classList.add("hidden");
+
+  const opciones = opcionesTercio(nota.codigo_infraccion) || [];
+  const infraccion = getInfraccion(nota.codigo_infraccion);
+
+  btn.disabled = true;
+  btn.classList.add("is-busy");
+  statusEl.classList.remove("hidden");
+  try {
+    let descargoNotas = $("sSancionDescargo").value.trim();
+    // Un resumen guardado antes de esta corrección pudo quedar con la frase
+    // genérica de relleno: no debe analizarse como si fuera el descargo, se
+    // vuelve a leer el archivo original para obtener sus argumentos reales.
+    if (esResumenDescargoInsuficiente(descargoNotas)) descargoNotas = "";
+    if (!descargoNotas && nota.archivo_descargo_path) {
+      statusEl.textContent = "Leyendo el archivo del descargo ya subido...";
+      descargoNotas = (await extraerTextoDescargo(nota, (msg) => { statusEl.textContent = msg; })).trim();
+    }
+    if (!descargoNotas) {
+      throw new Error("No se encontró texto legible del descargo. Revise que el archivo esté cargado o escriba un resumen manual de los puntos relevantes y argumentos de defensa.");
+    }
+
+    statusEl.textContent = "Consultando directivas internas y antecedentes...";
+    const directivas = directivasParaIA(state.directivas.length ? state.directivas : await listarDirectivas(supabase));
+    const antecedentes = buscarAntecedentes(nota, state.notas);
+
+    statusEl.textContent = "Analizando el descargo y redactando con IA...";
+    const { data, error } = await supabase.functions.invoke("redactar-analisis", {
+      body: {
+        investigadoCompleto: nombreInvestigadoVisible(nota, true),
+        codigoInfraccion: normalizarCodigoInfraccion(nota.codigo_infraccion),
+        infraccionTexto: infraccion?.infraccion || "",
+        hechoResumen: buildCasoConcreto(nota),
+        tercios: opciones.map((o) => ({ value: o.value, label: o.label, extremo: o.extremo })),
+        descargoNotas,
+        analisisNotas: $("sSancionAnalisis").value.trim(),
+        antecedentes,
+        directivas,
+      },
+    });
+    if (error) throw new Error(await mensajeErrorFuncion(error));
+    if (data?.error) throw new Error(data.error);
+    if (data?.descargo_texto && !esResumenDescargoInsuficiente(data.descargo_texto)) {
+      $("sSancionDescargo").value = data.descargo_texto;
+    } else {
+      throw new Error("No se pudo obtener un resumen útil del descargo. Revise el archivo o redacte un resumen de los puntos relevantes y argumentos de defensa antes de generar la orden.");
+    }
+    if (data?.analisis_texto) {
+      $("sSancionAnalisis").value = data.analisis_texto;
+      $("sSancionAnalisis").dataset.autofilled = "false";
+    }
+    // La IA SUGIERE el tercio pero no lo marca: la sanción la elige el funcionario
+    // (supervisión humana, art. 24.11 y 31.4 del Reglamento de la Ley 31814).
+    const sugerido = data?.tercio_value
+      ? [...document.querySelectorAll('input[name="sancionTercio"]')].find((r) => r.value === data.tercio_value)
+      : null;
+    if (sugerido) {
+      const sug = $("sancionSugerenciaIA");
+      sug.textContent = `Sugerencia de la IA (no seleccionada): ${sugerido.closest("label").textContent.trim()}. Elija usted la sanción; si elige otra, revise que el análisis la sustente.`;
+      sug.classList.remove("hidden");
+    }
+    // Se propone (sin obligar) dejar constancia del apoyo de IA en el documento.
+    if ($("sSancionAvisoIA")) $("sSancionAvisoIA").checked = true;
+    // Guarda lo que redactó la IA como borrador: si se recarga antes de
+    // "Guardar y descargar", no se pierde.
+    guardarBorrador(nota.id, "descargo", $("sSancionDescargo").value);
+    guardarBorrador(nota.id, "analisis", $("sSancionAnalisis").value);
+    statusEl.textContent = "Listo — la IA evaluó el descargo y redactó el texto; el tercio queda a su elección. Revise todo antes de guardar.";
+  } catch (err) {
+    console.error(err);
+    statusEl.classList.add("hidden");
+    errEl.textContent = "No se pudo redactar con IA: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-busy");
+  }
+}
+
+// Documentos que el legajo firmado debe contener para darse por completo. El
+// descargo suele estar cargado aparte al registrarlo: se marca "yaConsta" para
+// que la IA no lo cuente como faltante y quede claro que va adjunto.
+function componentesEsperadosExpediente(nota) {
+  const comps = [
+    { etiqueta: "Inicio de Imputación de Infracción Leve", yaConsta: false },
+    { etiqueta: "Notificación de la imputación al investigado", yaConsta: false },
+  ];
+  if (nota.fecha_descargo) {
+    comps.push({ etiqueta: "Descargo firmado del investigado", yaConsta: !!nota.archivo_descargo_path });
+  } else {
+    comps.push({ etiqueta: "Acta de No Descargo", yaConsta: false });
+  }
+  comps.push({ etiqueta: "Orden de Sanción", yaConsta: false });
+  comps.push({ etiqueta: "Cargo de notificación firmado por el investigado", yaConsta: false });
+  return comps;
+}
+
+async function verificarNotificacionOrdenIA(nota) {
+  const file = $("fOrdenNotifArchivo").files[0];
+  const statusEl = $("ordenNotifIAStatus");
+  if (!file) { statusEl.textContent = "Seleccione primero el PDF del legajo firmado."; statusEl.classList.remove("hidden"); return; }
+  const btn = $("btnVerificarNotifIA");
+  btn.disabled = true;
+  btn.classList.add("is-busy");
+  statusEl.classList.remove("hidden");
+  statusEl.textContent = "Leyendo el archivo...";
+  try {
+    const esPdf = file.type === "application/pdf";
+    const esImagen = file.type.startsWith("image/");
+    const textoDocumento = esPdf
+      ? await extractPdfText(file, (msg) => { statusEl.textContent = msg; })
+      : esImagen
+      ? await extractImagenTextoConOcr(file, (msg) => { statusEl.textContent = msg; })
+      : "";
+
+    statusEl.textContent = "Verificando con IA que el expediente esté completo...";
+    const sancionImpuesta = nota.sancion_tipo === "amonestacion" ? "amonestación" : `${nota.sancion_dias} días de Sanción Simple`;
+    const componentesEsperados = componentesEsperadosExpediente(nota);
+    const { data, error } = await supabase.functions.invoke("revisar-documento-ia", {
+      body: {
+        tipo: "expediente_completo",
+        investigadoCompleto: nombreInvestigadoVisible(nota, true),
+        codigoInfraccion: normalizarCodigoInfraccion(nota.codigo_infraccion),
+        sancionImpuesta,
+        componentesEsperados,
+        textoDocumento,
+      },
+    });
+    if (error) throw new Error(await mensajeErrorFuncion(error));
+    if (data?.error) throw new Error(data.error);
+    if (data?.fecha_detectada) $("fOrdenNotifFecha").value = data.fecha_detectada;
+    const faltantes = data?.faltantes || [];
+    const observaciones = (data?.observaciones || []).join(" · ");
+    statusEl.innerHTML = data?.consistente
+      ? `✓ El expediente está completo.${observaciones ? " <span class='muted'>" + escapeHtml(observaciones) + "</span>" : ""}`
+      : `⚠ ${faltantes.length ? "Falta(n): <strong>" + faltantes.map(escapeHtml).join(", ") + "</strong>. " : ""}${observaciones ? escapeHtml(observaciones) : "Revise el PDF antes de guardar."}`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudo verificar con IA: " + (err.message || err);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-busy");
+  }
+}
+
+async function submitNotificacionOrden(e, nota) {
+  e.preventDefault();
+  const errEl = $("ordenNotifError");
+  errEl.classList.add("hidden");
+  const file = $("fOrdenNotifArchivo").files[0];
+  const fecha = $("fOrdenNotifFecha").value;
+  if (!file || !fecha) return;
+  const btn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(btn, true, "Registrando...");
+  try {
+    const path = `${nota.id}/expediente_firmado_${Date.now()}_${file.name}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, file);
+    if (upErr) { errEl.textContent = "Error al subir archivo: " + upErr.message; errEl.classList.remove("hidden"); return; }
+
+    const { error } = await supabase.rpc("registrar_notificacion_orden", {
+      p_nota_id: nota.id,
+      p_fecha: fecha,
+      p_archivo_path: path,
+      p_archivo_nombre: file.name,
+    });
+    if (error) { errEl.textContent = "Error: " + error.message; errEl.classList.remove("hidden"); return; }
+    openNotaDetail(nota.id);
+  } finally {
+    ocuparBoton(btn, false);
+  }
+}
+
+const AVISO_APOYO_IA = "El presente análisis fue redactado con apoyo de una herramienta de inteligencia artificial y revisado por el funcionario firmante.";
+
+async function submitSancion(e, nota) {
+  e.preventDefault();
+  const errEl = $("sancionError");
+  errEl.classList.add("hidden");
+  const tercioValue = document.querySelector('input[name="sancionTercio"]:checked')?.value;
+  let analisisTexto = $("sSancionAnalisis").value.trim();
+  const descargoTexto = $("sSancionDescargo").value.trim();
+
+  if (!tercioValue) { errEl.textContent = "Seleccione la sanción a imponer."; errEl.classList.remove("hidden"); return; }
+  if (!analisisTexto) { errEl.textContent = "Escriba el Análisis y Evaluación."; errEl.classList.remove("hidden"); return; }
+  if (nota.fecha_descargo && esResumenDescargoInsuficiente(descargoTexto)) {
+    errEl.textContent = "Falta el resumen del descargo. Use «Analizar descargo y redactar con IA» o escriba los puntos relevantes y argumentos de defensa antes de generar la orden.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  // Transparencia hacia el investigado (art. 25.3 del Reglamento de la Ley 31814).
+  if ($("sSancionAvisoIA")?.checked && !analisisTexto.includes(AVISO_APOYO_IA)) {
+    analisisTexto = `${analisisTexto}
+
+${AVISO_APOYO_IA}`;
+  }
+
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  const textoOriginal = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.classList.add("is-busy");
+  submitBtn.textContent = "Generando...";
+  try {
+    const blob = await renderizarOrdenSancionDocx(nota, state.efectivos, { tercioValue, analisisTexto, descargoTexto });
+    const nombreArchivo = nombreArchivoDocumento("ORDEN DE SANCION", nota);
+    saveAs(blob, nombreArchivo);
+    registrarVersionDocumento(nota.id, "orden_sancion", blob, nombreArchivo);
+    const tipo = tercioValue === "amonestacion" ? "amonestacion" : "dias";
+    const dias = tercioValue === "amonestacion" ? null : Number(tercioValue);
+    const { error } = await supabase.rpc("registrar_sancion", {
+      p_nota_id: nota.id,
+      p_tipo: tipo,
+      p_dias: dias,
+      p_analisis: analisisTexto,
+      p_descargo_resumen: descargoTexto,
+    });
+    if (error) { errEl.textContent = "Se generó el documento, pero no se pudo guardar la decisión: " + error.message; errEl.classList.remove("hidden"); return; }
+    limpiarBorradoresNota(nota.id);
+    void enviarAlertaSancionPendiente(nota.id);
+    openNotaDetail(nota.id);
+  } catch (err) {
+    console.error(err);
+    errEl.textContent = err.message || "No se pudo generar la Orden de Sanción.";
+    errEl.classList.remove("hidden");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.classList.remove("is-busy");
+    submitBtn.textContent = textoOriginal;
+  }
+}
+
+// Contraparte de submitSancion: cierra el caso SIN sanción (Anexo IV) en vez
+// de con ella. Mutuamente excluyente con la Orden -- ver el guard en el HTML
+// de la tarjeta ("!nota.orden_sancion_generada_at").
+async function submitArchivoLeve(e, nota) {
+  e.preventDefault();
+  const errEl = $("archivoLeveError");
+  errEl.classList.add("hidden");
+  const motivoTexto = $("alMotivo").value.trim();
+
+  if (!motivoTexto) { errEl.textContent = "Escriba el motivo del archivo."; errEl.classList.remove("hidden"); return; }
+
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  const textoOriginal = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.classList.add("is-busy");
+  submitBtn.textContent = "Generando...";
+  try {
+    // Se reserva primero (idempotente: si esta nota ya tiene un número
+    // asignado -por ejemplo, de un intento anterior sin terminar- devuelve
+    // el mismo en vez de consumir uno nuevo) para poder usarlo al renderizar.
+    const { data: resolucionNumero, error: errNumero } = await supabase.rpc("reservar_resolucion_archivo_leve", {
+      p_nota_id: nota.id,
+    });
+    if (errNumero) { errEl.textContent = "No se pudo asignar el N.º de Resolución: " + errNumero.message; errEl.classList.remove("hidden"); return; }
+    const blob = await renderizarArchivoLeveDocx(nota, state.efectivos, { motivoTexto, resolucionNumero });
+    const nombreArchivo = nombreArchivoDocumento("ARCHIVO DEL PROCEDIMIENTO", nota);
+    saveAs(blob, nombreArchivo);
+    registrarVersionDocumento(nota.id, "archivo_leve", blob, nombreArchivo);
+    const { error } = await supabase.rpc("registrar_archivo_leve", {
+      p_nota_id: nota.id,
+      p_motivo: motivoTexto,
+    });
+    if (error) { errEl.textContent = "Se generó el documento, pero no se pudo guardar la decisión: " + error.message; errEl.classList.remove("hidden"); return; }
+    limpiarBorradoresNota(nota.id);
+    openNotaDetail(nota.id);
+  } catch (err) {
+    console.error(err);
+    errEl.textContent = err.message || "No se pudo generar el Archivo del Procedimiento.";
+    errEl.classList.remove("hidden");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.classList.remove("is-busy");
+    submitBtn.textContent = textoOriginal;
+  }
+}
+
+// Descarga el Informe Administrativo (infracción GRAVE G39 o MUY GRAVE MG32) — solo
+// genera y descarga el .docx, sin guardar nada en la nota: es un documento de
+// referencia hacia otra instancia, no cambia el estado del trámite leve.
+// Descarga un archivo del bucket "notas" como Blob; null si no hay path o si
+// falla (un anexo faltante no debe tumbar el paquete completo — se arma con
+// lo que sí se pudo conseguir y se avisa cuáles faltaron).
+async function descargarArchivoStorage(path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("notas").download(path);
+  if (error || !data) return null;
+  return data;
+}
+
+// Arma el ZIP completo del Informe Administrativo: el .docx recién generado
+// + todas las Notas Informativas de la ausencia (falta original, cada
+// "Continúan faltos" que tenga archivo, y la de reincorporación) + los Roles
+// de Servicio guardados de cada día del periodo — listo para remitir al
+// órgano disciplinario sin tener que ir a buscar cada PDF por separado.
+async function generarPaqueteInformeZip(nota, firmantes) {
+  const informeBlob = await renderizarInformeAdministrativoDocx(nota, state.efectivos, state.rolesServicio, firmantes);
+
+  const anexos = [];
+  const faltantes = [];
+  const agregar = async (path, nombreSugerido, carpeta) => {
+    if (!path) return;
+    const blob = await descargarArchivoStorage(path);
+    if (blob) anexos.push({ nombre: `${carpeta}/${nombreSugerido}`, blob });
+    else faltantes.push(nombreSugerido);
+  };
+
+  // El nombre del anexo SIEMPRE empieza con categoría+fecha, nunca solo el
+  // nombre original del archivo: varios documentos de un mismo caso (falta,
+  // reincorporación, roles de servicio de días distintos) suelen venir del
+  // mismo lote escaneado con el mismo nombre genérico (ej. "DIVCOP 1.pdf"),
+  // y con solo ese nombre dos anexos distintos terminan pisándose entre sí
+  // dentro del .zip (el segundo sobrescribe al primero, silenciosamente).
+  await agregar(nota.archivo_nota_path, `Falta ${nota.fecha_falta} - ${nota.archivo_nota_nombre || "nota.pdf"}`, "Notas Informativas");
+  for (const s of (nota.seguimiento_faltas || [])) {
+    await agregar(s.archivo_path, `Continua falto ${s.fecha} - ${s.archivo_nombre || "nota.pdf"}`, "Notas Informativas");
+  }
+  await agregar(nota.archivo_reincorporacion_path, `Reincorporacion ${nota.fecha_reincorporacion} - ${nota.archivo_reincorporacion_nombre || "nota.pdf"}`, "Notas Informativas");
+
+  // Sin reincorporación todavía, se cierra el rango con hoy (igual que hace
+  // construirDatosInformeAdministrativo) para no dejar de adjuntar los roles
+  // de servicio ya guardados de los días transcurridos.
+  const fechaCierreZip = nota.fecha_reincorporacion || hoyLima();
+  for (const fecha of diasDeAusencia(nota.fecha_falta, fechaCierreZip)) {
+    const rol = (state.rolesServicio || []).find((r) => r.fecha === fecha);
+    if (rol) await agregar(rol.archivo_path, `Rol ${fecha} - ${rol.archivo_nombre || "rol.pdf"}`, "Roles de Servicio");
+  }
+
+  // renderizarInformeAdministrativoDocx ya cargó PizZip/Docxtemplater; este
+  // segundo llamado a cargarDocxDeps() reusa esa misma carga en caché, no
+  // vuelve a pedirla por red.
+  const { PizZip } = await cargarDocxDeps();
+  const zip = new PizZip();
+  const nombreBase = `${(nota.grado || "").trim()} ${nombreCompletoVisible(nota.apellidos, nota.nombres)}`.replace(/\s+/g, " ").trim();
+  // PizZip no acepta un Blob directo (lanza "Unsupported data given") — hay
+  // que pasarle el ArrayBuffer ya leído.
+  zip.file(`INFORME ADMINISTRATIVO - ${nombreBase}.docx`, await informeBlob.arrayBuffer());
+  for (const a of anexos) zip.file(a.nombre, await a.blob.arrayBuffer());
+  const zipBlob = zip.generate({ type: "blob", mimeType: "application/zip" });
+  saveAs(zipBlob, `Informe ${nombreBase} - ${(nota.codigo_infraccion || "").trim()}.zip`.replace(/\s+/g, " ").trim());
+
+  return { anexosIncluidos: anexos.length, faltantes };
+}
+
+async function submitInformeAdministrativo(e, nota) {
+  e.preventDefault();
+  const errEl = $("informeAdminError");
+  errEl.classList.add("hidden");
+  const firmantes = {
+    conforme: {
+      grado: $("iaConformeGrado").value.trim(),
+      nombre: $("iaConformeNombre").value.trim(),
+      cargo: $("iaConformeCargo").value.trim(),
+    },
+    instructor: {
+      grado: $("iaInstructorGrado").value.trim(),
+      nombre: $("iaInstructorNombre").value.trim(),
+    },
+  };
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(submitBtn, true, "Generando...");
+  try {
+    const { anexosIncluidos, faltantes } = await generarPaqueteInformeZip(nota, firmantes);
+    if (faltantes.length) {
+      toast(`ZIP generado con ${anexosIncluidos} anexo(s). No se pudo incluir: ${faltantes.join(", ")} (verifique que el archivo se haya subido).`, "info", 9000);
+    } else {
+      toast(`ZIP generado con el informe y ${anexosIncluidos} anexo(s).`, "ok");
+    }
+  } catch (err) {
+    console.error(err);
+    errEl.textContent = "Error: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(submitBtn, false);
+  }
+}
+
+async function submitDescargo(e, notaId) {
+  e.preventDefault();
+  const errEl = $("descargoError");
+  errEl.classList.add("hidden");
+  const fecha = $("dFecha").value;
+  const numero = $("dNumero").value.trim();
+  const file = $("dArchivo").files[0];
+
+  let archivo_descargo_path = null;
+  let archivo_descargo_nombre = null;
+  if (file) {
+    const path = `${notaId}/descargo_${Date.now()}_${file.name}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, file);
+    if (upErr) { errEl.textContent = "Error al subir archivo: " + upErr.message; errEl.classList.remove("hidden"); return; }
+    archivo_descargo_path = path;
+    archivo_descargo_nombre = file.name;
+  }
+
+  const { error } = await supabase.rpc("registrar_descargo", {
+    p_nota_id: notaId,
+    p_fecha: fecha,
+    p_numero: numero,
+    p_archivo_path: archivo_descargo_path,
+    p_archivo_nombre: archivo_descargo_nombre,
+  });
+
+  if (error) { errEl.textContent = "Error: " + error.message; errEl.classList.remove("hidden"); return; }
+  openNotaDetail(notaId);
+}
+
+// Deshace un descargo registrado por error (archivo de otro efectivo, fecha
+// equivocada, etc.). Borra fecha, N.º, archivo y el resumen del descargo;
+// no toca la sanción ni las versiones ya generadas.
+async function quitarDescargo(nota) {
+  if (!confirm(`¿Quitar el descargo registrado de ${nombreInvestigadoVisible(nota)}?\n\nSe borrará la fecha, el N.º, el archivo y el resumen del descargo de este expediente. El resto no cambia.`)) return;
+  const btn = $("btnQuitarDescargo");
+  ocuparBoton(btn, true, "Quitando...");
+  const rutaArchivo = nota.archivo_descargo_path;
+  const { error } = await supabase.rpc("quitar_descargo", { p_nota_id: nota.id });
+  if (error) {
+    ocuparBoton(btn, false);
+    toast("No se pudo quitar el descargo: " + error.message);
+    return;
+  }
+  // Mejor esfuerzo: borrar también el archivo del bucket (si la RLS lo permite).
+  if (rutaArchivo) { try { await supabase.storage.from("notas").remove([rutaArchivo]); } catch (_) {} }
+  openNotaDetail(nota.id);
+}
+
+async function submitCodigoInfraccion(e, notaId) {
+  e.preventDefault();
+  const msgEl = $("codigoInfraccionMsg");
+  msgEl.classList.add("hidden");
+  const codigo_infraccion = $("fCodigoInfraccionEdit").value.trim();
+  const { error } = await supabase.from("notas_informativas").update({ codigo_infraccion }).eq("id", notaId);
+  if (error) { msgEl.textContent = "Error: " + error.message; msgEl.classList.remove("hidden"); return; }
+  openNotaDetail(notaId);
+}
+
+async function submitPuestoRol(e, notaId) {
+  e.preventDefault();
+  const msgEl = $("puestoRolMsg");
+  msgEl.classList.add("hidden");
+  const puesto_rol = $("fPuestoRolEdit").value.trim() || null;
+  const { error } = await supabase.from("notas_informativas").update({ puesto_rol }).eq("id", notaId);
+  if (error) { msgEl.textContent = "Error: " + error.message; msgEl.classList.remove("hidden"); return; }
+  openNotaDetail(notaId);
+}
+
+async function eliminarNota(id) {
+  if (!confirm("¿Eliminar esta nota informativa? Esta acción no se puede deshacer.")) return;
+  const { error } = await supabase.from("notas_informativas").delete().eq("id", id);
+  if (error) { toast("No se pudo eliminar: " + error.message); return; }
+  showView("view-dashboard");
+  loadNotas();
+}
+
+async function submitReincorporacion(e, notaId) {
+  e.preventDefault();
+  const errEl = $("reincError");
+  errEl.classList.add("hidden");
+  const fecha = $("rFecha").value;
+  const numero = $("rNumero").value.trim();
+  const hora = $("rHora").value || null;
+  const observacion = $("rObservacion").value.trim() || null;
+  const file = $("rArchivo").files[0];
+
+  let archivo_reincorporacion_path = null;
+  let archivo_reincorporacion_nombre = null;
+  if (file) {
+    const path = `${notaId}/reincorporacion_${Date.now()}_${file.name}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, file);
+    if (upErr) { errEl.textContent = "Error al subir archivo: " + upErr.message; errEl.classList.remove("hidden"); return; }
+    archivo_reincorporacion_path = path;
+    archivo_reincorporacion_nombre = file.name;
+  }
+
+  const { data: notaActual } = await supabase
+    .from("notas_informativas")
+    .select("fecha_falta, hora_falta, codigo_infraccion")
+    .eq("id", notaId)
+    .single();
+
+  let codigo_infraccion;
+  if (notaActual && !notaActual.codigo_infraccion) {
+    const sugerido = sugerirCodigoInfraccion(horasAusente({ ...notaActual, fecha_reincorporacion: fecha, hora_reincorporacion: hora }));
+    if (sugerido) codigo_infraccion = sugerido;
+  }
+
+  const { error } = await supabase.from("notas_informativas").update({
+    fecha_reincorporacion: fecha,
+    numero_nota_reincorporacion: numero,
+    hora_reincorporacion: hora,
+    reincorporacion_observacion: observacion,
+    ...(codigo_infraccion ? { codigo_infraccion } : {}),
+    ...(archivo_reincorporacion_path ? { archivo_reincorporacion_path, archivo_reincorporacion_nombre } : {}),
+  }).eq("id", notaId);
+
+  if (error) { errEl.textContent = "Error: " + error.message; errEl.classList.remove("hidden"); return; }
+  openNotaDetail(notaId);
+}
+
+async function submitExpediente(e, notaId) {
+  e.preventDefault();
+  const errEl = $("expError");
+  errEl.classList.add("hidden");
+  const numero_oficio = $("eOficio").value.trim();
+  const numero_ht = $("eHt").value.trim();
+  const dias_sancion = $("eDias").value ? Number($("eDias").value) : null;
+  const file = $("eArchivo").files[0];
+
+  const { data: inserted, error } = await supabase.from("expedientes").insert({
+    nota_id: notaId, numero_oficio, numero_ht, dias_sancion,
+  }).select().single();
+
+  if (error) { errEl.textContent = "Error: " + error.message; errEl.classList.remove("hidden"); return; }
+
+  if (file) {
+    const path = `${inserted.id}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await supabase.storage.from("expedientes").upload(path, file);
+    if (!upErr) {
+      await supabase.from("expedientes").update({
+        archivo_expediente_path: path, archivo_expediente_nombre: file.name,
+      }).eq("id", inserted.id);
+    }
+  }
+  openNotaDetail(notaId);
+}
+
+// ---------- Efectivos ----------
+async function loadEfectivos() {
+  const { data, error } = await supabase
+    .from("efectivos")
+    .select("*")
+    .order("apellidos_nombres", { ascending: true });
+  if (error) { console.error(error); toast("No se pudo cargar el padrón de Efectivos: " + (error.message || "error de red") + ". Los documentos podrían no completar CIP/DNI."); return; }
+  state.efectivos = data || [];
+  renderEfectivosTable(state.efectivos);
+}
+
+function renderEfectivosTable(list) {
+  const tbody = $("efectivosTableBody");
+  tbody.innerHTML = "";
+  $("efectivosEmpty").classList.toggle("hidden", list.length > 0);
+  for (const ef of list) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(ef.grado || "")}</td>
+      <td>${escapeHtml(ef.apellidos_nombres || "")}</td>
+      <td>${escapeHtml(ef.cip || "")}</td>
+      <td>${escapeHtml(ef.dni || "")}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+$("searchEfectivos").addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase();
+  const filtered = state.efectivos.filter((ef) =>
+    [ef.cip, ef.dni, ef.apellidos_nombres, ef.grado].filter(Boolean).join(" ").toLowerCase().includes(q)
+  );
+  renderEfectivosTable(filtered);
+});
+
+// ---------- Roles de servicio (biblioteca por día) ----------
+async function loadRolesServicio() {
+  const { data, error } = await supabase
+    .from("roles_servicio").select("*").order("fecha", { ascending: false });
+  if (error) { console.error(error); toast("No se pudieron cargar los roles de servicio: " + error.message); return; }
+  state.rolesServicio = data || [];
+  await renderRolesServicioTabla();
+}
+
+function rolGuardadoParaFecha(fecha) {
+  if (!fecha) return null;
+  return (state.rolesServicio || []).find((r) => {
+    const fin = r.fecha_fin || r.fecha;
+    return fecha >= r.fecha && fecha <= fin;
+  }) || null;
+}
+
+async function renderRolesServicioTabla() {
+  const tbody = $("rolesTableBody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  $("rolesEmpty").classList.toggle("hidden", state.rolesServicio.length > 0);
+  for (const r of state.rolesServicio) {
+    const link = await fileLinkHtml("notas", r.archivo_path, r.archivo_nombre);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${formatDate(r.fecha)}${r.fecha_fin && r.fecha_fin !== r.fecha ? ` a ${formatDate(r.fecha_fin)}` : ""}</td>
+      <td>${link}</td>
+      <td class="small muted">${formatDate(fechaLima(r.created_at))}</td>
+      <td class="row-actions"><button type="button" class="btn-danger btn-borrar-rol" data-id="${r.id}" data-path="${escapeHtml(r.archivo_path)}">Eliminar</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll(".btn-borrar-rol").forEach((b) => b.addEventListener("click", () => eliminarRolServicio(b.dataset.id, b.dataset.path)));
+}
+
+async function eliminarRolServicio(id, path) {
+  if (!confirm("¿Eliminar este rol de servicio?")) return;
+  const { error } = await supabase.from("roles_servicio").delete().eq("id", id);
+  if (error) { toast("No se pudo eliminar: " + error.message); return; }
+  if (path) { try { await supabase.storage.from("notas").remove([path]); } catch (_) {} }
+  loadRolesServicio();
+}
+
+$("rolForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("rolFormError");
+  const statusEl = $("rolFormStatus");
+  errEl.classList.add("hidden");
+  statusEl.classList.remove("hidden");
+  const fecha = $("rolFecha").value;
+  const file = $("rolArchivo").files[0];
+  if (!fecha || !file) { errEl.textContent = "Elija la fecha y el archivo del rol."; errEl.classList.remove("hidden"); statusEl.classList.add("hidden"); return; }
+  const btn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(btn, true, "Subiendo...");
+  try {
+    statusEl.textContent = "Leyendo el rol...";
+    const esPdf = file.type === "application/pdf";
+    const texto = esPdf
+      ? await extractPdfText(file, (m) => { statusEl.textContent = m; })
+      : await extractImagenTextoConOcr(file, (m) => { statusEl.textContent = m; });
+    // Deja que la IA confirme el periodo del encabezado (por si el usuario
+    // eligió mal la fecha); si falla, se queda con la fecha elegida.
+    let fechaFin = null;
+    try {
+      const meta = await extraerPuestoRolIA(texto, "(verificación de fecha)", fecha);
+      if (meta?.fecha_rol_inicio && meta.fecha_rol_inicio !== fecha) {
+        statusEl.textContent = `⚠ El encabezado del rol dice ${formatDate(meta.fecha_rol_inicio)}. Se guardará con la fecha que usted eligió (${formatDate(fecha)}); corríjala si no coincide.`;
+      }
+      fechaFin = meta?.fecha_rol_fin || null;
+    } catch (_) { /* opcional */ }
+
+    const path = `roles_servicio/${fecha}_${Date.now()}_${segmentoRuta(file.name, "rol.pdf")}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, file, { upsert: false });
+    if (upErr) throw upErr;
+    const { error } = await supabase.from("roles_servicio").upsert({
+      fecha, fecha_fin: fechaFin, archivo_path: path, archivo_nombre: file.name,
+      texto_extraido: texto, subido_por: state.session.user.id, updated_at: new Date().toISOString(),
+    }, { onConflict: "fecha" });
+    if (error) throw error;
+    e.target.reset();
+    statusEl.textContent = "✓ Rol guardado.";
+    setTimeout(() => statusEl.classList.add("hidden"), 2500);
+    await loadRolesServicio();
+  } catch (err) {
+    console.error(err);
+    errEl.textContent = "No se pudo subir el rol: " + (err.message || err);
+    errEl.classList.remove("hidden");
+    statusEl.classList.add("hidden");
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+// Alta manual de un efectivo al padrón (solo admin; la RLS ya lo exige).
+function cerrarModalEfectivo() { $("modalNuevoEfectivo").classList.add("hidden"); }
+$("btnNuevoEfectivo")?.addEventListener("click", () => {
+  $("efectivoForm").reset();
+  $("efectivoFormError").classList.add("hidden");
+  $("modalNuevoEfectivo").classList.remove("hidden");
+  $("efGrado").focus();
+});
+$("btnCerrarModalEfectivo")?.addEventListener("click", cerrarModalEfectivo);
+$("btnCancelarEfectivo")?.addEventListener("click", cerrarModalEfectivo);
+$("modalNuevoEfectivo")?.addEventListener("click", (e) => { if (e.target === $("modalNuevoEfectivo")) cerrarModalEfectivo(); });
+
+$("efectivoForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("efectivoFormError");
+  errEl.classList.add("hidden");
+  const cip = $("efCip").value.trim();
+  const dni = $("efDni").value.trim();
+  const apellidos_nombres = $("efApellidosNombres").value.trim();
+  const grado = $("efGrado").value.trim();
+  if (!cip || !dni || !apellidos_nombres) {
+    errEl.textContent = "Complete grado, CIP, DNI y apellidos y nombres.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const btn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(btn, true, "Guardando...");
+  try {
+    const { error } = await supabase.from("efectivos").insert({
+      grado, cip, dni, apellidos_nombres,
+      created_by: state.session.user.id,
+    });
+    if (error) {
+      errEl.textContent = /duplicate key|unique/i.test(error.message)
+        ? `Ya existe un efectivo con ese CIP o DNI.`
+        : "No se pudo guardar: " + error.message;
+      errEl.classList.remove("hidden");
+      return;
+    }
+    cerrarModalEfectivo();
+    await loadEfectivos();
+    $("searchEfectivos").value = cip;
+    $("searchEfectivos").dispatchEvent(new Event("input"));
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+// ---------- Nueva nota modal ----------
+let pdfCandidates = [];
+
+$("btnNuevaNota").addEventListener("click", () => {
+  $("notaForm").reset();
+  $("lookupResult").classList.add("hidden");
+  $("notaFormError").classList.add("hidden");
+  $("pdfAutoStatus").classList.add("hidden");
+  $("rolAutoStatus").classList.add("hidden");
+  $("faltaAbiertaWarning").classList.add("hidden");
+  pdfCandidates = [];
+  renderCandidatesChecklist();
+  // Quien registra la nota suele ser el mismo oficial que constató --
+  // se autocompleta con sus propios datos (buscados por su CIP de sesión),
+  // igual que en notificacion-imputacion-pnp; se puede editar si no aplica.
+  // Se marca dataset.autofilled="true" para que, si luego se sube un PDF
+  // y la IA detecta un oficial distinto, ese dato SÍ pueda reemplazar este
+  // valor puesto por default (antes el autocompletado con el propio nombre
+  // bloqueaba silenciosamente la detección real del PDF, porque esa lógica
+  // solo llenaba el campo si estaba vacío).
+  const yoMismo = state.cip ? state.efectivos.find((ef) => ef.cip === state.cip) : null;
+  $("fOficialConstato").value = yoMismo ? `${yoMismo.grado || ""} ${yoMismo.apellidos_nombres || ""}`.replace(/\s+/g, " ").trim() : "";
+  $("fOficialConstato").dataset.autofilled = yoMismo ? "true" : "false";
+  $("modalNuevaNota").classList.remove("hidden");
+});
+$("fOficialConstato").addEventListener("input", () => {
+  $("fOficialConstato").dataset.autofilled = "false";
+});
+$("btnCerrarModal").addEventListener("click", closeModal);
+$("btnCancelarNota").addEventListener("click", closeModal);
+function closeModal() { $("modalNuevaNota").classList.add("hidden"); }
+
+// Avisa si la persona que se está por registrar ya tiene una nota abierta
+// (sigue faltando, no se ha reincorporado): registrarla de nuevo aquí
+// fragmentaría la misma ausencia en dos notas y el código de infracción
+// (L21/L24/G39/MG32) saldría mal cuando por fin regrese. No bloquea el
+// guardado — el oficial puede tener una razón real para crearla igual — solo
+// avisa con lo que ya se sabe.
+function verificarFaltaAbierta() {
+  const warnEl = $("faltaAbiertaWarning");
+  const apellidos = $("fApellidos").value.trim();
+  if (!apellidos) { warnEl.classList.add("hidden"); return; }
+  const numeroNotaFalta = $("fNumeroNotaFalta").value.trim();
+  const nombres = $("fNombres").value.trim();
+  // Un N.º que ya está guardado como reincorporación o "Continúan faltos" de
+  // esta persona no es una falta nueva, aunque su expediente ya esté cerrado.
+  const yaRegistrado = clasificarNotaEntrante({ apellidos, nombres, numero_nota_falta: numeroNotaFalta }, state.notas);
+  if (yaRegistrado?.nota) {
+    const como = yaRegistrado.motivo === "reincorporacion" ? "la reincorporación" : "un «Continúan faltos»";
+    warnEl.textContent = `Este N.º de nota ya está registrado como ${como} del expediente N.º ${yaRegistrado.nota.numero_nota_falta || "-"} (falta del ${formatDate(yaRegistrado.nota.fecha_falta)}) de ${nombreCompletoVisible(apellidos, nombres)}. No es una falta nueva: no la cree aquí.`;
+    warnEl.classList.remove("hidden");
+    return;
+  }
+  const existente = faltaYaRegistrada(numeroNotaFalta, { apellidos, nombres });
+  if (existente && !existente.fecha_reincorporacion) {
+    warnEl.textContent = `${nombreCompletoVisible(existente.apellidos, existente.nombres)} ya tiene una nota abierta desde el ${formatDate(existente.fecha_falta)}${existente.numero_nota_falta ? ` (N.º ${existente.numero_nota_falta})` : ""}, todavía sin reincorporarse. Si sigue faltando, esta es la MISMA ausencia — no cree una nota nueva; regístrele la reincorporación cuando corresponda y el código de infracción se ajusta solo según el tiempo total ausente.`;
+    warnEl.classList.remove("hidden");
+  } else {
+    warnEl.classList.add("hidden");
+  }
+}
+$("fApellidos").addEventListener("blur", verificarFaltaAbierta);
+$("fNombres").addEventListener("blur", verificarFaltaAbierta);
+
+function splitApellidosNombres(full) {
+  const txt = (full || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (txt.includes(",")) {
+    const [ap, no] = txt.split(",");
+    return { apellidos: ap.trim(), nombres: (no || "").trim() };
+  }
+  const words = txt.split(/\s+/).filter(Boolean);
+  if (words.length <= 2) return { apellidos: txt, nombres: "" };
+  return { apellidos: words.slice(0, 2).join(" "), nombres: words.slice(2).join(" ") };
+}
+
+function renderCandidatesChecklist() {
+  const container = $("multiplesEfectivos");
+  const list = $("multiplesEfectivosList");
+  if (pdfCandidates.length <= 1) {
+    container.classList.add("hidden");
+    list.innerHTML = "";
+    return;
+  }
+  list.innerHTML = pdfCandidates.slice(1).map((c) => `
+    <div class="multi-efectivo-row">
+      <label class="checkbox-row"><input type="checkbox" class="multiCheck" checked /></label>
+      <div class="grid-3">
+        <input type="text" class="multiGrado" value="${escapeHtml(c.grado)}" placeholder="Grado" />
+        <input type="text" class="multiApellidos" value="${escapeHtml(c.apellidos)}" placeholder="Apellidos" />
+        <input type="text" class="multiNombres" value="${escapeHtml(c.nombres)}" placeholder="Nombres" />
+      </div>
+    </div>
+  `).join("");
+  container.classList.remove("hidden");
+}
+
+// ---------- Autocompletado desde PDF (Nota Informativa) ----------
+const MESES_ABREV = {
+  ENE: "01", FEB: "02", MAR: "03", ABR: "04", MAY: "05", JUN: "06",
+  JUL: "07", AGO: "08", SET: "09", SEP: "09", OCT: "10", NOV: "11", DIC: "12",
+};
+
+// Antes esto usaba tesseract.js (OCR genérico corriendo en el navegador):
+// lentísimo en documentos largos (minutos) y con errores frecuentes en
+// escaneos reales (sellos, membretes, mala calidad). Ahora, cuando el PDF no
+// tiene texto seleccionable, cada página se manda como imagen a la función
+// "extraer-texto-vision" (Claude con visión) -- mucho más preciso, y corre
+// en el servidor en vez de trabar el navegador del oficial.
+const PAGINAS_POR_LOTE_VISION = 4;
+
+function canvasABase64Jpeg(canvas) {
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+  return dataUrl.slice(dataUrl.indexOf(",") + 1);
+}
+
+async function blobABase64(blob) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  return dataUrl.slice(dataUrl.indexOf(",") + 1);
+}
+
+async function transcribirPaginasConIA(paginas, onEstado) {
+  const lotes = [];
+  for (let i = 0; i < paginas.length; i += PAGINAS_POR_LOTE_VISION) {
+    lotes.push(paginas.slice(i, i + PAGINAS_POR_LOTE_VISION));
+  }
+  const textos = [];
+  for (let i = 0; i < lotes.length; i++) {
+    const desde = i * PAGINAS_POR_LOTE_VISION + 1;
+    const hasta = Math.min((i + 1) * PAGINAS_POR_LOTE_VISION, paginas.length);
+    onEstado?.(paginas.length > 1
+      ? `Transcribiendo con IA: página${hasta > desde ? "s" : ""} ${desde}${hasta > desde ? `-${hasta}` : ""} de ${paginas.length}...`
+      : "Transcribiendo la imagen con IA...");
+    const { data, error } = await supabase.functions.invoke("extraer-texto-vision", {
+      body: { paginas: lotes[i] },
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    textos.push(data?.texto || "");
+  }
+  return textos.join("\n\n");
+}
+
+// Muchos escaneos traen una capa de texto pobre: pdf.js saca el membrete o
+// la primera línea, pero no el cuerpo del descargo. No basta con "¿hay algo
+// de texto?"; se mide si hay texto ÚTIL por página y si solo predominan
+// datos de trámite (encabezado sin argumentos de defensa).
+// "soloCabecera" (¿parece portada de trámite sin argumento de defensa?) solo
+// tiene sentido para descargos: una nota de reincorporación, de falta, o un
+// rol de servicio jamás van a "alegar" ni "sostener" nada aunque estén
+// perfectamente completos, así que ese chequeo solo se activa cuando lo pide
+// quien lee específicamente un descargo (verificarSoloCabecera=true) — si no,
+// dispara falsos positivos en cualquier documento puramente factual/administrativo.
+function textoPdfPareceIncompleto(textosPorPagina, verificarSoloCabecera = false) {
+  const paginas = textosPorPagina.map((t) => String(t || "").replace(/\s+/g, " ").trim());
+  const texto = paginas.join(" ");
+  const letras = (texto.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g) || []).length;
+  const paginasConPocoTexto = paginas.filter((p) => (p.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g) || []).length < 140).length;
+  const soloCabecera = verificarSoloCabecera
+    && /\b(administrado|sumilla|referencia|interpone descargo|notificaci[oó]n de presunta infracci[oó]n)\b/i.test(texto)
+    && !/\b(alega|sostiene|manifiesta|señala|argumenta|solicita|pide|niega|reconoce|justifica|porque|adjunta|acredita|prueba)\b/i.test(texto);
+  return letras < Math.max(450, paginas.length * 180)
+    || paginasConPocoTexto / Math.max(paginas.length, 1) >= 0.6
+    || soloCabecera;
+}
+
+// Renderiza y transcribe por lotes para que un descargo de muchas páginas no
+// acumule todas las imágenes en memoria del navegador antes de llamar a la IA.
+async function transcribirPdfConVisionIA(pdf, onEstado) {
+  const textos = [];
+  for (let inicio = 1; inicio <= pdf.numPages; inicio += PAGINAS_POR_LOTE_VISION) {
+    const fin = Math.min(pdf.numPages, inicio + PAGINAS_POR_LOTE_VISION - 1);
+    const paginas = [];
+    for (let numero = inicio; numero <= fin; numero++) {
+      const page = await pdf.getPage(numero);
+      const viewport = page.getViewport({ scale: 1.8 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      paginas.push({ data: canvasABase64Jpeg(canvas), mediaType: "image/jpeg" });
+    }
+    onEstado?.(`Leyendo con IA las páginas ${inicio}-${fin} de ${pdf.numPages}...`);
+    textos.push(await transcribirPaginasConIA(paginas));
+  }
+  return textos.join("\n\n");
+}
+
+async function extractPdfText(file, onEstado, { verificarSoloCabecera = false } = {}) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const textosPorPagina = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    textosPorPagina.push(content.items.map((it) => it.str).join(" "));
+  }
+  const textoBase = textosPorPagina.join("\n");
+  // También se activa cuando el OCR interno del PDF quedó incompleto: así la
+  // IA con visión lee el documento real, no solo el encabezado. Si esa
+  // revisión con IA falla (red, función caída), no se descarta el texto ya
+  // extraído del PDF: es real y usable, aunque el heurístico haya sospechado.
+  if (textoPdfPareceIncompleto(textosPorPagina, verificarSoloCabecera)) {
+    onEstado?.("El texto interno del PDF parece incompleto. Revisando todas las páginas con IA...");
+    try {
+      return await transcribirPdfConVisionIA(pdf, onEstado);
+    } catch (err) {
+      console.error("La revisión con IA con visión falló; se usa el texto ya extraído del PDF:", err);
+      onEstado?.("No se pudo revisar con IA; se usa el texto ya extraído del PDF.");
+    }
+  }
+  return textoBase;
+}
+
+async function extractImagenTextoConOcr(blob, onEstado) {
+  const base64 = await blobABase64(blob);
+  return await transcribirPaginasConIA([{ data: base64, mediaType: blob.type || "image/jpeg" }], onEstado);
+}
+
+// Lee automáticamente el archivo de descargo ya subido (PDF o foto), para
+// que el oficial no tenga que volver a escribir lo que ya alegó el
+// investigado por escrito. Si no se puede leer, devuelve "" y el oficial
+// puede escribir sus notas a mano como respaldo.
+async function extraerTextoDescargo(nota, onEstado) {
+  if (!nota.archivo_descargo_path) return "";
+  const { data: blob, error } = await supabase.storage.from("notas").download(nota.archivo_descargo_path);
+  if (error || !blob) return "";
+  const nombre = nota.archivo_descargo_nombre || "";
+  const esPdf = /\.pdf$/i.test(nombre) || blob.type === "application/pdf";
+  const esImagen = /\.(jpe?g|png|webp|bmp)$/i.test(nombre) || blob.type.startsWith("image/");
+  try {
+    if (esPdf) return await extractPdfText(blob, onEstado, { verificarSoloCabecera: true });
+    if (esImagen) return await extractImagenTextoConOcr(blob, onEstado);
+  } catch (err) {
+    console.error("No se pudo leer el archivo de descargo:", err);
+  }
+  return "";
+}
+
+// Extrae los efectivos mencionados en la nota. Prioriza la lista con viñetas
+// ("- GRADO PNP NOMBRE"), usada cuando hay varios efectivos faltos; si no hay
+// viñetas, cae a la frase "... del/de los/de las GRADO PNP NOMBRE" y entre
+// todas sus menciones toma la de más palabras (el PDF a veces pega el
+// apellido sin espacio en una mención pero lo repite bien espaciado en otra).
+function extractPersonCandidates(norm) {
+  const bulletPattern = /-\s*([A-Z0-9./]{1,8})\s+PNP\.?\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]*(?:\s+[A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}){0,4})/g;
+  const bullets = [...norm.matchAll(bulletPattern)];
+  if (bullets.length) {
+    return bullets.map((m) => ({ grado: m[1].trim(), nombreCompleto: m[2].trim() }));
+  }
+
+  // Nota de "sigue faltando" (Continúan faltos): el investigado real aparece
+  // recién después de "constató que", NO en el "da cuenta que" inicial (ese
+  // suele nombrar a quien pasó revista ese día, no a quien falta) — p. ej.
+  // "...da cuenta que, la ALFZ. PNP LUNA ROJAS..., al pasar lista...,
+  // constató que el S3 PNP TORRES VEGA Luis Alberto, Continúan falto...".
+  // Se ancla en "constató que" y se exige que el texto realmente hable de
+  // una ausencia que continúa, para no disparar en otro tipo de nota.
+  if (/continú[a-z]*\s+falt/i.test(norm)) {
+    const mConstato = norm.match(/constat[oó]\s+que\s+(?:el|la|los|las)?\s*([A-Z0-9./]{1,8})\s+PNP\.?\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]*(?:\s+[A-Za-zÁÉÍÓÚÑáéíóúñ]+){0,4}?)(?=\s*,|\s+y\s+|\s*$)/i);
+    if (mConstato) return [{ grado: mConstato[1].trim(), nombreCompleto: mConstato[2].trim() }];
+  }
+
+  // "el Comisario ... da cuenta que el/la GRADO PNP NOMBRE, GRADO PNP NOMBRE, ...
+  // y GRADO PNP NOMBRE se <verbo>". Formato más estable entre notas de falta y
+  // de reincorporación: a diferencia del ASUNTO (que a veces omite "PNP"), este
+  // párrafo siempre antepone "PNP" a cada nombre. El artículo (el/la/los/las)
+  // solo suele preceder al primer efectivo de la lista; los demás (separados
+  // por comas, y el último por "y") normalmente no lo llevan, así que aquí es
+  // opcional en vez de obligatorio.
+  const mBloque = norm.match(/da\s+cuenta\s+que\s+([\s\S]*?)\s+se\s+\w+/i);
+  if (mBloque) {
+    const personPattern = /(?:(?:el|la|los|las)\s+)?([A-Z0-9./]{1,8})\s+PNP\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]*(?:\s+[A-Za-zÁÉÍÓÚÑáéíóúñ]+){0,4}?)(?=\s*,|\s+y\s+|\s*$)/g;
+    const personas = [...mBloque[1].matchAll(personPattern)];
+    if (personas.length) {
+      return personas.map((m) => ({ grado: m[1].trim(), nombreCompleto: m[2].trim() }));
+    }
+  }
+
+  // Admite "del", "de la", "de los", "de las" y también "de" sin artículo.
+  // El nombre termina en coma/punto, justo antes de la siguiente mención
+  // "NOTA INFORMATIVA", o al final del texto (partes sin puntuación ahí).
+  const prosePattern = /\bde(?:l|\s+la|\s+los|\s+las)?\s+([A-Z0-9./]{1,8}\s+PNP\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]*(?:\s+[A-Za-zÁÉÍÓÚÑáéíóúñ]+){0,5})(?=[.,]|\s+NOTA\s+INFORMATIVA|\s*$)/gi;
+  const matches = [...norm.matchAll(prosePattern)];
+  let best = null;
+  let bestWordCount = -1;
+  for (const m of matches) {
+    const raw = m[1].trim();
+    const idxPnp = raw.toUpperCase().indexOf("PNP");
+    if (idxPnp === -1) continue;
+    const nombreCompleto = raw.slice(idxPnp + 3).trim();
+    const wordCount = nombreCompleto.split(/\s+/).filter(Boolean).length;
+    if (wordCount > bestWordCount) {
+      bestWordCount = wordCount;
+      best = { grado: raw.slice(0, idxPnp).trim(), nombreCompleto };
+    }
+  }
+  return best ? [best] : [];
+}
+
+// Extracción estructurada por IA (reemplaza al parser por expresiones
+// regulares como método principal): manda el texto crudo del PDF/OCR a la
+// Edge Function "extraer-nota-informativa" y devuelve el resultado ya
+// normalizado a la misma forma que devolvía parseNotaInformativa/
+// parseReincorporacion, para no tener que tocar el resto de los llamadores.
+// Si la llamada falla (red caída, IA sin configurar, etc.) el llamador cae
+// de vuelta al parser por patrones como respaldo — nunca deja al oficial sin
+// autocompletado por un error transitorio.
+async function extraerDatosNotaIA(texto, tipo) {
+  const { data, error } = await supabase.functions.invoke("extraer-nota-informativa", {
+    body: { tipo, texto },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+// A partir del texto del rol de servicio y del nombre del investigado, la IA
+// devuelve el puesto/servicio que tenía asignado ese día.
+async function extraerPuestoRolIA(texto, persona, fecha) {
+  const { data, error } = await supabase.functions.invoke("extraer-nota-informativa", {
+    body: { tipo: "rol_servicio", texto, persona, fecha },
+  });
+  if (error) throw new Error(await mensajeErrorFuncion(error));
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+// Igual que autocompletarPuestoDesdeRol pero usando el rol ya guardado en la
+// biblioteca para la fecha de la falta (no hace falta volver a subir el PDF).
+async function resolverPuestoDesdeRolGuardado() {
+  if ($("fArchivoRol").files[0]) return; // si subió un archivo manual, ese manda
+  const statusEl = $("rolAutoStatus");
+  const fechaFalta = $("fFechaFalta").value;
+  const persona = `${$("fApellidos").value.trim()} ${$("fNombres").value.trim()}`.trim();
+  if (!fechaFalta || !persona) return;
+  const rol = rolGuardadoParaFecha(fechaFalta);
+  if (!rol) {
+    statusEl.classList.remove("hidden");
+    statusEl.textContent = `No hay rol de servicio guardado para el ${formatDate(fechaFalta)}. Súbalo en la pestaña «Roles» o adjunte uno aquí.`;
+    return;
+  }
+  if (!rol.texto_extraido) return;
+  statusEl.classList.remove("hidden");
+  statusEl.textContent = "Buscando el puesto en el rol guardado...";
+  try {
+    const r = await extraerPuestoRolIA(rol.texto_extraido, persona, fechaFalta);
+    aplicarResultadoRolIA(r, fechaFalta);
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudo consultar el rol guardado: " + (err.message || err);
+  }
+}
+
+// Vuelca el resultado de la IA del rol en el campo de puesto + avisos.
+function aplicarResultadoRolIA(r, fechaFalta) {
+  const statusEl = $("rolAutoStatus");
+  const ini = r?.fecha_rol_inicio || null;
+  const fin = r?.fecha_rol_fin || ini;
+  if (ini && (fechaFalta < ini || fechaFalta > fin)) {
+    $("fPuestoRol").value = "";
+    const rango = fin && fin !== ini ? `${formatDate(ini)} a ${formatDate(fin)}` : formatDate(ini);
+    statusEl.textContent = `⚠ Ese rol es del ${rango} y la falta es del ${formatDate(fechaFalta)}. Use el rol de servicio de ese día.`;
+    return;
+  }
+  const SIT = {
+    falto: "⚠ Figura en «FALTOS AL SERVICIO» del rol.",
+    descanso_medico: "⚠ Figura con DESCANSO MÉDICO — ¿corresponde imputar?",
+    vacaciones: "⚠ Figura de VACACIONES — la ausencia podría estar justificada.",
+    permiso: "⚠ Figura con PERMISO — la ausencia podría estar justificada.",
+    franco: "⚠ Figura de FRANCO.",
+    suspension: "⚠ Figura con SUSPENSIÓN TEMPORAL DEL SERVICIO.",
+  };
+  if (r?.puesto) {
+    $("fPuestoRol").value = r.puesto;
+    statusEl.textContent = `✓ Puesto detectado (rol del ${formatDate(ini || fechaFalta)}): ${r.puesto}. Verifíquelo.`;
+  } else if (r?.encontrado && r?.situacion && SIT[r.situacion]) {
+    $("fPuestoRol").value = "";
+    statusEl.textContent = `${SIT[r.situacion]}${r.detalle_novedad ? " (" + r.detalle_novedad + ")" : ""}`;
+  } else {
+    statusEl.textContent = "No se ubicó a esta persona en el rol de ese día. Escriba el puesto a mano si corresponde.";
+  }
+}
+
+async function autocompletarPuestoDesdeRol(file) {
+  if (!file) return;
+  const statusEl = $("rolAutoStatus");
+  statusEl.classList.remove("hidden");
+  const persona = `${$("fApellidos").value.trim()} ${$("fNombres").value.trim()}`.trim();
+  if (!persona) { statusEl.textContent = "Complete primero los apellidos y nombres del investigado."; return; }
+  const fechaFalta = $("fFechaFalta").value;
+  if (!fechaFalta) { statusEl.textContent = "Complete primero la fecha de la falta: el rol debe ser el de ESE día."; return; }
+  try {
+    const esPdf = file.type === "application/pdf";
+    const texto = esPdf
+      ? await extractPdfText(file, (m) => { statusEl.textContent = m; })
+      : await extractImagenTextoConOcr(file, (m) => { statusEl.textContent = m; });
+    statusEl.textContent = "Buscando el puesto en el rol con IA...";
+    const r = await extraerPuestoRolIA(texto, persona, fechaFalta);
+    if (!r?.fecha_rol_inicio) {
+      statusEl.textContent = "⚠ No se pudo leer la fecha del rol. Verifique usted que sea el del día de la falta.";
+    }
+    aplicarResultadoRolIA(r, fechaFalta);
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudo leer el rol de servicio: " + (err.message || err);
+  }
+}
+
+function normalizarResultadoFaltaIA(ia) {
+  const candidates = (ia.candidatos || []).map((c) => ({
+    grado: (c.grado || "").trim(),
+    apellidos: (c.apellidos || "").trim(),
+    nombres: (c.nombres || "").trim(),
+  }));
+  const result = {
+    numero_nota_falta: ia.numero_nota || undefined,
+    fecha_falta: ia.fecha || undefined,
+    hora_falta: ia.hora || undefined,
+    oficial_constato: ia.oficial_constato || undefined,
+    candidates,
+  };
+  if (candidates.length) {
+    result.grado = candidates[0].grado;
+    result.apellidos = candidates[0].apellidos;
+    result.nombres = candidates[0].nombres;
+  }
+  return result;
+}
+
+function normalizarResultadoReincorporacionIA(ia) {
+  const candidates = (ia.candidatos || []).map((c) => ({
+    grado: (c.grado || "").trim(),
+    apellidos: (c.apellidos || "").trim(),
+    nombres: (c.nombres || "").trim(),
+  }));
+  return {
+    numero_nota_reincorporacion: ia.numero_nota || undefined,
+    numero_nota_falta_ref: ia.numero_nota_referencia || undefined,
+    fecha_reincorporacion: ia.fecha || undefined,
+    hora_reincorporacion: ia.hora || undefined,
+    candidates,
+  };
+}
+
+// ---------- Parser por patrones (respaldo si la extracción por IA falla) ----------
+function parseNotaInformativa(text) {
+  const norm = text.replace(/\s+/g, " ");
+  const result = {};
+
+  // El símbolo "N°" varía mucho al venir de OCR (N°, Nº, No, N*, o directo "N
+  // 123..." sin símbolo), así que se acepta cualquiera de esas variantes.
+  const mNumero = norm.match(/NOTA\s+INFORMATIVA\s+N[°ºo*]?\.?\s*([0-9]+)/i);
+  if (mNumero) result.numero_nota_falta = mNumero[1];
+
+  // El OCR a veces confunde la "O" de un mes con el dígito "0" (p. ej. "AGO"
+  // sale como "AG0"), así que el patrón admite ambos y luego se normaliza.
+  const mFecha = norm.match(/d[ií]a\s+(\d{1,2})\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AG[O0]|SET|SEP|[O0]CT|N[O0]V|DIC)\s*(\d{4})/i);
+  if (mFecha) {
+    const dd = mFecha[1].padStart(2, "0");
+    const mm = MESES_ABREV[mFecha[2].toUpperCase().replace(/0/g, "O")];
+    result.fecha_falta = `${mFecha[3]}-${mm}-${dd}`;
+  }
+
+  // Hora en que se pasó lista y se constató la ausencia.
+  const mHora = norm.match(/a\s+horas\s+(\d{1,2}:\d{2})\s*,?\s*constat[oó]/i);
+  if (mHora) result.hora_falta = mHora[1];
+
+  result.candidates = extractPersonCandidates(norm).map((c) => ({
+    grado: c.grado,
+    ...splitApellidosNombres(c.nombreCompleto),
+  }));
+  if (result.candidates.length) {
+    result.grado = result.candidates[0].grado;
+    result.apellidos = result.candidates[0].apellidos;
+    result.nombres = result.candidates[0].nombres;
+  }
+
+  // El oficial que constató suele mencionarse justo antes de la palabra "constató".
+  // "PNP" puede venir con punto ("TNTE PNP. RIOS...") o sin él ("CMDTE. PNP REYES...").
+  const namePattern = /((?:[A-ZÁÉÍÓÚÑ.]{2,}\.?\s+){1,3}PNP\.?\s+[A-Z][A-Za-zÁÉÍÓÚÑáéíóúñ]*(?:\s+[A-Z][A-Za-zÁÉÍÓÚÑáéíóúñ]*){0,3})/g;
+  const idxConstato = norm.search(/constat[oó]/i);
+  if (idxConstato !== -1) {
+    let bestOficial = null;
+    let m;
+    while ((m = namePattern.exec(norm))) {
+      if (m.index < idxConstato) bestOficial = m[1];
+      else break;
+    }
+    if (bestOficial) {
+      result.oficial_constato = bestOficial.replace(/\s*\bPNP\b\.?\s*/i, " ").replace(/\s+/g, " ").trim();
+    }
+  }
+
+  const oficialCorr = oficialCorregidoDesdeTexto(text);
+  if (oficialCorr) result.oficial_constato = oficialCorr;
+
+  return result;
+}
+
+// Algunas Notas Informativas son una "Corrección de información" de otra: en
+// el cuerpo repiten el párrafo original (con el dato equivocado) y luego
+// aclaran, p. ej., que el oficial que dio cuenta de los faltos no fue el que
+// figuraba, "debiendo consignarse al CAP. PNP X, quien se encontraba como
+// Oficial de Permanencia". Tanto la IA como el parser por patrones leen el
+// nombre del párrafo original; esta función detecta la corrección y devuelve
+// el oficial correcto (mismo formato "GRADO. APELLIDOS Nombres", sin "PNP").
+function oficialCorregidoDesdeTexto(texto) {
+  const t = (texto || "").replace(/\s+/g, " ");
+  if (!/correcci[oó]n|error\s+material|se\s+consign[oó]\s+de\s+manera\s+err[oó]nea/i.test(t)) return null;
+  // El terminador no incluye "." a secas para no cortar en el punto de la
+  // abreviatura del grado ("CAP.", "MY.", "TNTE."); se corta en coma, punto
+  // y coma, o las palabras que suelen seguir al nombre.
+  const patrones = [
+    /debiendo\s+consignars?e\s+(?:a\s+|al\s+)?(.{3,80}?)(?:\s*[,;]|\s+quien|\s+como|\s+el\s+mismo|\s+siendo|$)/i,
+    /siendo\s+lo\s+correcto\s+(?:el\s+|la\s+)?(.{3,80}?)(?:\s*[,;]|\s+quien|\s+como|$)/i,
+    /lo\s+correcto\s+es\s+(?:el\s+|que\s+sea\s+)?(.{3,80}?)(?:\s*[,;]|\s+quien|\s+como|$)/i,
+    /en\s+lugar\s+de\s+.+?\s+debe(?:r[ií]a)?\s+(?:decir|consignarse|ser)\s+(.{3,80}?)(?:\s*[,;]|\s+quien|$)/i,
+  ];
+  for (const re of patrones) {
+    const m = t.match(re);
+    // "PNP" puede venir pegado al apellido si el PDF se extrajo sin espacio
+    // ("PNPQUISPE"), así que no se exige límite de palabra; y al limpiarlo se
+    // quita también ese "PNP" pegado como prefijo del nombre.
+    if (m && /PNP/i.test(m[1])) {
+      return m[1].replace(/\s*\bPNP\b\.?\s*/i, " ").replace(/\bPNP\.?/i, "").replace(/\s+/g, " ").trim();
+    }
+  }
+  return null;
+}
+
+function parseReincorporacion(text) {
+  const norm = text.replace(/\s+/g, " ");
+  const result = {};
+
+  // El propio número de nota aparece primero; el número de la nota de falta
+  // original referenciada en "REF." aparece como la segunda mención.
+  const notaNumberMatches = [...norm.matchAll(/NOTA\s+INFORMATIVA\s+N[°ºo*]?\.?\s*([0-9]+)/gi)];
+  if (notaNumberMatches[0]) result.numero_nota_reincorporacion = notaNumberMatches[0][1];
+  if (notaNumberMatches[1]) result.numero_nota_falta_ref = notaNumberMatches[1][1];
+
+  // Ancla en "se incorporó/incorporaron/reincorporó/reincorporaron" y acota el
+  // tramo hasta "quien(es) se encontraba(n)", que es donde arranca la mención
+  // de la falta ORIGINAL (con su propia fecha, que no debe confundirse con esta).
+  const mActo = norm.match(/se\s+(?:re)?incorpor\w*([\s\S]*?)(?:quien(?:es)?\s+se\s+encontrab|$)/i);
+  const tramo = mActo ? mActo[1] : norm;
+
+  // El año puede venir abreviado a 2 dígitos (p. ej. "11AGO26"). El OCR a
+  // veces confunde la "O" de un mes con el dígito "0" (p. ej. "AG0"), así que
+  // el patrón admite ambos y luego se normaliza antes de buscar en el mapa.
+  const mFecha = tramo.match(/(\d{1,2})\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AG[O0]|SET|SEP|[O0]CT|N[O0]V|DIC)\s*(\d{2,4})/i);
+  if (mFecha) {
+    const dd = mFecha[1].padStart(2, "0");
+    const mm = MESES_ABREV[mFecha[2].toUpperCase().replace(/0/g, "O")];
+    let yyyy = mFecha[3];
+    if (yyyy.length === 2) yyyy = (Number(yyyy) >= 70 ? "19" : "20") + yyyy;
+    result.fecha_reincorporacion = `${yyyy}-${mm}-${dd}`;
+  }
+
+  const mHora = tramo.match(/(?:a\s+las|las)\s+(\d{1,2}:\d{2})/i);
+  if (mHora) result.hora_reincorporacion = mHora[1];
+
+  return result;
+}
+
+async function autocompletarReincorporacion(file) {
+  const statusEl = $("reincAutoStatus");
+  if (!statusEl) return;
+  if (!file || file.type !== "application/pdf") {
+    statusEl.classList.add("hidden");
+    return;
+  }
+  statusEl.textContent = "Leyendo PDF...";
+  statusEl.classList.remove("hidden");
+  try {
+    const text = await extractPdfText(file, (msg) => { statusEl.textContent = msg; });
+    let data;
+    try {
+      statusEl.textContent = "Interpretando el contenido con IA...";
+      data = normalizarResultadoReincorporacionIA(await extraerDatosNotaIA(text, "reincorporacion"));
+    } catch (iaErr) {
+      console.error("Extracción por IA falló, se usa el reconocimiento por patrones como respaldo:", iaErr);
+      data = parseReincorporacion(text);
+    }
+    if (data.fecha_reincorporacion && !$("rFecha").value) $("rFecha").value = data.fecha_reincorporacion;
+    if (data.numero_nota_reincorporacion && !$("rNumero").value) $("rNumero").value = data.numero_nota_reincorporacion;
+    if (data.hora_reincorporacion && !$("rHora").value) $("rHora").value = data.hora_reincorporacion;
+    if (data.fecha_reincorporacion) {
+      statusEl.textContent = `Datos autocompletados desde el PDF (reincorporación: ${formatDate(data.fecha_reincorporacion)}${data.hora_reincorporacion ? " a las " + data.hora_reincorporacion + " horas" : ""}). Verifique antes de guardar.`;
+    } else {
+      statusEl.textContent = "No se pudo detectar la fecha de reincorporación en el PDF. Complete el formulario manualmente.";
+    }
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudo leer el PDF automáticamente. Complete el formulario manualmente.";
+  }
+}
+
+async function autocompletarDesdeArchivo(file) {
+  const statusEl = $("pdfAutoStatus");
+  if (!file || file.type !== "application/pdf") {
+    statusEl.classList.add("hidden");
+    return;
+  }
+  statusEl.textContent = "Leyendo PDF...";
+  statusEl.classList.remove("hidden");
+  pdfCandidates = [];
+  renderCandidatesChecklist();
+  try {
+    const text = await extractPdfText(file, (msg) => { statusEl.textContent = msg; });
+    let data;
+    try {
+      statusEl.textContent = "Interpretando el contenido con IA...";
+      data = normalizarResultadoFaltaIA(await extraerDatosNotaIA(text, "falta"));
+    } catch (iaErr) {
+      console.error("Extracción por IA falló, se usa el reconocimiento por patrones como respaldo:", iaErr);
+      data = parseNotaInformativa(text);
+    }
+    // Si es una Nota de "Corrección", el oficial que constató del párrafo
+    // original está equivocado: la corrección es autoritativa y pisa lo que
+    // haya extraído la IA o el parser (y lo que ya estuviera en el campo).
+    const oficialCorr = oficialCorregidoDesdeTexto(text);
+    if (oficialCorr) {
+      data.oficial_constato = oficialCorr;
+      $("fOficialConstato").value = oficialCorr;
+      $("fOficialConstato").dataset.autofilled = "false";
+    }
+    if (data.grado && !$("fGrado").value) $("fGrado").value = data.grado;
+    if (data.apellidos && !$("fApellidos").value) $("fApellidos").value = data.apellidos;
+    if (data.nombres && !$("fNombres").value) $("fNombres").value = data.nombres;
+    if (data.fecha_falta && !$("fFechaFalta").value) $("fFechaFalta").value = data.fecha_falta;
+    if (data.numero_nota_falta && !$("fNumeroNotaFalta").value) $("fNumeroNotaFalta").value = data.numero_nota_falta;
+    if (data.hora_falta && !$("fHoraFalta").value) $("fHoraFalta").value = data.hora_falta;
+    if (data.oficial_constato && (!$("fOficialConstato").value || $("fOficialConstato").dataset.autofilled === "true")) {
+      $("fOficialConstato").value = data.oficial_constato;
+      $("fOficialConstato").dataset.autofilled = "false";
+    }
+    pdfCandidates = data.candidates || [];
+    renderCandidatesChecklist();
+    if (Object.keys(data).length) {
+      let msg = "Datos autocompletados desde el PDF. Verifique antes de guardar (falta el código de infracción).";
+      if (pdfCandidates.length > 1) {
+        msg += ` Se detectaron ${pdfCandidates.length} efectivos en este PDF — revise la lista de abajo y desmarque los que no correspondan; se creará una nota para cada uno marcado.`;
+      }
+      statusEl.textContent = msg;
+    } else {
+      statusEl.textContent = "No se pudieron extraer datos del PDF. Complete el formulario manualmente.";
+    }
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudo leer el PDF automáticamente. Complete el formulario manualmente.";
+  }
+}
+
+$("btnBuscarEfectivo").addEventListener("click", async () => {
+  const term = $("lookupCipDni").value.trim();
+  const resultEl = $("lookupResult");
+  if (!term) return;
+  const { data, error } = await supabase
+    .from("efectivos")
+    .select("*")
+    .or(`cip.eq.${term},dni.eq.${term}`)
+    .maybeSingle();
+  if (error || !data) {
+    resultEl.textContent = "No se encontró un efectivo con ese CIP/DNI.";
+    resultEl.classList.remove("hidden");
+    return;
+  }
+  const { apellidos, nombres } = splitApellidosNombres(data.apellidos_nombres);
+  $("fGrado").value = data.grado || "";
+  $("fApellidos").value = apellidos;
+  $("fNombres").value = nombres;
+  resultEl.textContent = `Encontrado: ${data.grado || ""} ${data.apellidos_nombres || ""}`;
+  resultEl.classList.remove("hidden");
+});
+
+$("fArchivoNota").addEventListener("change", (e) => {
+  autocompletarDesdeArchivo(e.target.files[0]);
+});
+$("fArchivoRol").addEventListener("change", (e) => {
+  autocompletarPuestoDesdeRol(e.target.files[0]);
+});
+// Al fijar la fecha de la falta (o cambiar de investigado), si NO se adjuntó un
+// rol manual, se usa el rol de esa fecha ya guardado en la biblioteca.
+$("fFechaFalta").addEventListener("change", () => { void resolverPuestoDesdeRolGuardado(); });
+$("fApellidos").addEventListener("blur", () => { void resolverPuestoDesdeRolGuardado(); });
+
+$("notaForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("notaFormError");
+  errEl.classList.add("hidden");
+
+  const oficialConstatoTexto = $("fOficialConstato").value.trim() || null;
+  const compartido = {
+    fecha_falta: $("fFechaFalta").value,
+    numero_nota_falta: $("fNumeroNotaFalta").value.trim(),
+    hora_falta: $("fHoraFalta").value || null,
+    codigo_infraccion: $("fCodigoInfraccion").value.trim(),
+    oficial_constato: oficialConstatoTexto,
+    // Se resuelve y guarda ya en la creación (mismo emparejamiento que usa
+    // el resto de la app): es lo que la política de RLS usa para decidir
+    // qué notas puede ver cada oficial, así que sin esto la nota quedaría
+    // invisible para el propio oficial que constató la falta.
+    oficial_constato_cip: buscarOficialConstato(oficialConstatoTexto, state.efectivos)?.cip || null,
+    created_by: state.session.user.id,
+  };
+
+  const personas = [{
+    grado: $("fGrado").value.trim(),
+    apellidos: $("fApellidos").value.trim(),
+    nombres: $("fNombres").value.trim(),
+  }];
+
+  if (pdfCandidates.length > 1) {
+    document.querySelectorAll("#multiplesEfectivosList .multi-efectivo-row").forEach((row) => {
+      if (!row.querySelector(".multiCheck").checked) return;
+      personas.push({
+        grado: row.querySelector(".multiGrado").value.trim(),
+        apellidos: row.querySelector(".multiApellidos").value.trim(),
+        nombres: row.querySelector(".multiNombres").value.trim(),
+      });
+    });
+  }
+
+  // El CIP/DNI del investigado se guarda ya en la nota, con el padrón que solo
+  // el admin (quien crea las notas) tiene cargado. Así la Orden de Sanción se
+  // puede generar después sin volver a consultar el padrón completo.
+  const puestoRol = $("fPuestoRol").value.trim() || null;
+  const payloads = personas.map((p) => {
+    const ef = ubicarInvestigadoEnEfectivos(p, state.efectivos);
+    return { ...compartido, ...p, investigado_cip: ef?.cip || null, investigado_dni: ef?.dni || null, puesto_rol: puestoRol };
+  });
+
+  const btn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(btn, true, "Guardando...");
+  try {
+    const { data: inserted, error } = await supabase
+      .from("notas_informativas")
+      .insert(payloads)
+      .select();
+
+    if (error) { errEl.textContent = "Error: " + error.message; errEl.classList.remove("hidden"); return; }
+
+    const file = $("fArchivoNota").files[0];
+    if (file && inserted?.length) {
+      const path = `${inserted[0].id}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await supabase.storage.from("notas").upload(path, file);
+      if (!upErr) {
+        await supabase.from("notas_informativas")
+          .update({ archivo_nota_path: path, archivo_nota_nombre: file.name })
+          .in("id", inserted.map((n) => n.id));
+      }
+    }
+
+    pdfCandidates = [];
+    closeModal();
+    loadNotas();
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+// ---------- Reincorporación desde PDF (uno o varios archivos) ----------
+let reincLoteFilas = [];
+
+function normalizarTexto(s) {
+  return (s || "")
+    .toUpperCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function normalizarNombre(apellidos, nombres) {
+  return `${normalizarTexto(apellidos)} ${normalizarTexto(nombres)}`.replace(/\s+/g, " ").trim();
+}
+
+// Empareja primero por el N.º de la nota de falta original (campo REF. del PDF
+// de reincorporación) porque es exacto; si no está disponible, cae al nombre.
+// Si varias notas pendientes comparten ese N.º (falta grupal con varios
+// efectivos aún no reincorporados), se desambigua por nombre entre ellas:
+// primero por nombre completo exacto, y si no coincide (el PDF de
+// reincorporación a veces abrevia u omite el segundo nombre, o lo escribe con
+// una variante como "Patrick" vs "Patrik") por apellidos exactos únicamente,
+// que rara vez varían entre ambos documentos.
+// El REF. de una nota de "sigue faltando" apunta al N.º de la nota de falta
+// ORIGINAL — un dato mucho más confiable que el nombre para encontrar el
+// expediente correcto (sobre todo con reincidentes: la misma persona puede
+// tener varios expedientes YA CERRADOS, y adivinar por nombre podría pegar la
+// nota en el episodio equivocado). La IA de extracción solo saca este N.º
+// para tipo "reincorporacion" (así está su instrucción), así que aquí se
+// extrae por patrón directo del texto: el N.º de esta nota es la primera
+// mención de "NOTA INFORMATIVA N°", el REF. es la segunda.
+function extraerNumeroReferencia(text) {
+  const matches = [...(text || "").replace(/\s+/g, " ").matchAll(/NOTA\s+INFORMATIVA\s+N[°ºo*]?\.?\s*([0-9]+)/gi)];
+  return matches[1]?.[1] || null;
+}
+
+// A diferencia de buscarNotaPendiente (que solo mira expedientes abiertos,
+// correcto para Reincorporación), "Continúan faltos" también debe poder
+// registrarse sobre un expediente que YA se cerró mientras tanto (Hans puede
+// subir el seguimiento de un día intermedio después de haber cerrado el caso
+// con la reincorporación). Si el REF. coincide con un N.º de nota de falta
+// en todo el historial (abierto o cerrado), se usa ese — pero una nota de
+// falta grupal reporta a VARIAS personas bajo el mismo N.º (una fila por
+// efectivo), así que si el número solo no alcanza para desambiguar, se
+// desambigua por nombre DENTRO de ese grupo (nunca contra todo el
+// historial, para no pegar el seguimiento al tocayo de otro expediente). Si
+// no hay REF. o nada de esto resuelve, se cae al comportamiento de siempre
+// (solo pendientes, por nombre).
+function buscarNotaPorSeguimiento(numeroFaltaRef, candidate) {
+  if (numeroFaltaRef) {
+    const porNumero = state.notas.filter((n) => n.numero_nota_falta === numeroFaltaRef);
+    if (porNumero.length === 1) return porNumero[0];
+    if (porNumero.length > 1 && candidate) {
+      const objetivo = normalizarNombre(candidate.apellidos, candidate.nombres);
+      const exactos = porNumero.filter((n) => normalizarNombre(n.apellidos, n.nombres) === objetivo);
+      if (exactos.length === 1) return exactos[0];
+      const apellidosCand = normalizarTexto(candidate.apellidos);
+      const porApellidos = porNumero.filter((n) => normalizarTexto(n.apellidos) === apellidosCand);
+      if (porApellidos.length === 1) return porApellidos[0];
+    }
+  }
+  return buscarNotaPendiente(numeroFaltaRef, candidate);
+}
+
+function buscarNotaPendiente(numeroFaltaRef, candidate) {
+  const pendientes = state.notas.filter((n) => !n.fecha_reincorporacion);
+  let pool = pendientes;
+
+  if (numeroFaltaRef) {
+    const porNumero = pendientes.filter((n) => n.numero_nota_falta === numeroFaltaRef);
+    if (porNumero.length === 1) return porNumero[0];
+    pool = porNumero.length > 1 ? porNumero : (candidate ? pendientes : []);
+  }
+
+  if (!candidate) return pool.length === 1 ? pool[0] : null;
+
+  const objetivo = normalizarNombre(candidate.apellidos, candidate.nombres);
+  const exactos = pool.filter((n) => normalizarNombre(n.apellidos, n.nombres) === objetivo);
+  if (exactos.length === 1) return exactos[0];
+
+  const apellidosCand = normalizarTexto(candidate.apellidos);
+  const porApellidos = pool.filter((n) => normalizarTexto(n.apellidos) === apellidosCand);
+  if (porApellidos.length === 1) return porApellidos[0];
+
+  return null;
+}
+
+function renderReincLoteList() {
+  const el = $("rlLista");
+  if (!reincLoteFilas.length) { el.innerHTML = ""; return; }
+  el.innerHTML = reincLoteFilas.map((f) => {
+    const nombreLinea = f.candidate
+      ? escapeHtml(nombreInvestigadoVisible(f.candidate, true))
+      : "No se detectó un efectivo en este archivo";
+    const ya = f.yaReincorporada;
+    const yaTexto = ya
+      ? `${escapeHtml(formatDate(ya.nota.fecha_reincorporacion))}${ya.nota.numero_nota_reincorporacion ? ` con la nota N.º ${escapeHtml(ya.nota.numero_nota_reincorporacion)}` : ""} (falta del ${escapeHtml(formatDate(ya.nota.fecha_falta))})`
+      : "";
+    const pill = f.nota
+      ? `<span class="pill pill-yes">Nota encontrada${f.matchPor === "numero" ? " (por N.º de nota)" : " (por nombre)"} — falta ${formatDate(f.nota.fecha_falta)} · N.º ${escapeHtml(f.nota.numero_nota_falta || "-")}</span>`
+      : ya
+        ? (ya.mismaNota
+          ? `<span class="pill pill-info">Ya registrada con esta misma nota: reincorporación del ${yaTexto} — no hace falta volver a registrarla</span>`
+          : `<span class="pill pill-warning">Ya figura reincorporado el ${yaTexto} — no queda una falta pendiente que actualizar</span>`)
+        : `<span class="pill pill-no">No se encontró una nota pendiente que corresponda</span>`;
+    return `
+      <div class="multi-efectivo-row">
+        <label class="checkbox-row"><input type="checkbox" class="rlCheck" ${f.nota ? "checked" : "disabled"} /></label>
+        <div class="value" style="flex:1">
+          <div>${nombreLinea} <span class="muted small">(${escapeHtml(f.file.name)})</span></div>
+          <div style="display:flex; gap:8px; margin-top:6px">
+            <input type="date" class="rlFechaRow" value="${escapeHtml(f.fecha_reincorporacion)}" style="flex:1" />
+            <input type="time" class="rlHoraRow" value="${escapeHtml(f.hora_reincorporacion)}" style="flex:1" />
+            <input type="text" class="rlNumeroRow" value="${escapeHtml(f.numero_nota_reincorporacion)}" placeholder="N.º nota de reincorporación" style="flex:1" />
+          </div>
+          ${pill}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+$("btnReincorporacionLote").addEventListener("click", () => {
+  $("rlArchivo").value = "";
+  $("rlStatus").classList.add("hidden");
+  $("rlError").classList.add("hidden");
+  reincLoteFilas = [];
+  renderReincLoteList();
+  $("modalReincorporacionLote").classList.remove("hidden");
+});
+$("btnCerrarModalReinc").addEventListener("click", closeReincLoteModal);
+$("btnCancelarReincLote").addEventListener("click", closeReincLoteModal);
+function closeReincLoteModal() { $("modalReincorporacionLote").classList.add("hidden"); }
+
+$("rlArchivo").addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  const statusEl = $("rlStatus");
+  reincLoteFilas = [];
+  renderReincLoteList();
+  if (!files.length) {
+    statusEl.classList.add("hidden");
+    return;
+  }
+  statusEl.textContent = `Leyendo ${files.length} archivo(s)...`;
+  statusEl.classList.remove("hidden");
+  try {
+    const filas = [];
+    for (const file of files) {
+      if (file.type !== "application/pdf") continue;
+      const text = await extractPdfText(file, (msg) => { statusEl.textContent = `${file.name}: ${msg}`; });
+      const norm = text.replace(/\s+/g, " ");
+      let doc, candidates;
+      try {
+        statusEl.textContent = `${file.name}: interpretando el contenido con IA...`;
+        const ia = normalizarResultadoReincorporacionIA(await extraerDatosNotaIA(text, "reincorporacion"));
+        doc = ia;
+        candidates = ia.candidates;
+      } catch (iaErr) {
+        console.error("Extracción por IA falló, se usa el reconocimiento por patrones como respaldo:", iaErr);
+        doc = parseReincorporacion(text);
+        candidates = extractPersonCandidates(norm).map((c) => ({ grado: c.grado, ...splitApellidosNombres(c.nombreCompleto) }));
+      }
+      // La IA y el lector por patrones a veces se saltan a alguien cuando la lista
+      // viene sin coma entre uno y otro ("... Marcos R.P S2 PNP MENDOZA ...").
+      // Se completa con quienes el propio texto nombra como "GRADO PNP APELLIDOS
+      // Nombres" en el párrafo de los reincorporados: así nadie queda fuera.
+      candidates = completarCandidatos(candidates, personalPNPEnTexto(bloqueReincorporados(norm)));
+      const base = {
+        file,
+        fecha_reincorporacion: doc.fecha_reincorporacion || "",
+        numero_nota_reincorporacion: doc.numero_nota_reincorporacion || "",
+        hora_reincorporacion: doc.hora_reincorporacion || "",
+      };
+      if (candidates.length) {
+        for (const candidate of candidates) {
+          const nota = buscarNotaPendiente(doc.numero_nota_falta_ref, candidate);
+          // Sin falta pendiente: ¿es que ya se le registró la reincorporación?
+          const yaReincorporada = nota ? null : buscarReincorporada(state.notas, candidate, { numeroNota: base.numero_nota_reincorporacion, fecha: base.fecha_reincorporacion });
+          filas.push({ ...base, candidate, nota, yaReincorporada, matchPor: nota && doc.numero_nota_falta_ref && nota.numero_nota_falta === doc.numero_nota_falta_ref ? "numero" : "nombre" });
+        }
+      } else {
+        const nota = buscarNotaPendiente(doc.numero_nota_falta_ref, null);
+        filas.push({ ...base, candidate: null, nota, matchPor: "numero" });
+      }
+    }
+    reincLoteFilas = filas;
+    renderReincLoteList();
+
+    const encontrados = filas.filter((f) => f.nota).length;
+    const yaRegistrados = filas.filter((f) => !f.nota && f.yaReincorporada).length;
+    statusEl.textContent = `Se procesaron ${files.length} archivo(s): ${encontrados} de ${filas.length} coinciden con notas pendientes de reincorporación${yaRegistrados ? ` y ${yaRegistrados} ya estaban reincorporados` : ""}. Verifique antes de guardar.`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudieron leer algunos archivos automáticamente.";
+  }
+});
+
+$("btnGuardarReincLote").addEventListener("click", async (e) => {
+  const errEl = $("rlError");
+  errEl.classList.add("hidden");
+  const btnLote = e.currentTarget;
+
+  const rows = [...document.querySelectorAll("#rlLista .multi-efectivo-row")];
+  const seleccionados = rows
+    .map((row, i) => ({ row, fila: reincLoteFilas[i] }))
+    .filter(({ row, fila }) => row.querySelector(".rlCheck").checked && fila?.nota);
+
+  if (!seleccionados.length) {
+    errEl.textContent = "No hay notas coincidentes seleccionadas para actualizar.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  for (const { row, fila } of seleccionados) {
+    const fecha = row.querySelector(".rlFechaRow").value;
+    const numero = row.querySelector(".rlNumeroRow").value.trim();
+    if (!fecha || !numero) {
+      errEl.textContent = `Complete fecha y N.º de nota para ${nombreInvestigadoVisible(fila.nota)}.`;
+      errEl.classList.remove("hidden");
+      return;
+    }
+  }
+
+  ocuparBoton(btnLote, true, "Guardando...");
+  try {
+  const archivosSubidos = new Map();
+  for (const { fila } of seleccionados) {
+    if (archivosSubidos.has(fila.file)) continue;
+    const path = `lote/${Date.now()}_${fila.file.name}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, fila.file);
+    if (!upErr) archivosSubidos.set(fila.file, { path, nombre: fila.file.name });
+  }
+
+  let ultimoError = null;
+  for (const { row, fila } of seleccionados) {
+    const fecha = row.querySelector(".rlFechaRow").value;
+    const numero = row.querySelector(".rlNumeroRow").value.trim();
+    const hora = row.querySelector(".rlHoraRow").value || null;
+    const archivo = archivosSubidos.get(fila.file);
+    let codigo_infraccion;
+    if (!fila.nota.codigo_infraccion) {
+      const sugerido = sugerirCodigoInfraccion(horasAusente({ ...fila.nota, fecha_reincorporacion: fecha, hora_reincorporacion: hora }));
+      if (sugerido) codigo_infraccion = sugerido;
+    }
+    const { error } = await supabase.from("notas_informativas").update({
+      fecha_reincorporacion: fecha,
+      numero_nota_reincorporacion: numero,
+      hora_reincorporacion: hora,
+      ...(codigo_infraccion ? { codigo_infraccion } : {}),
+      ...(archivo ? { archivo_reincorporacion_path: archivo.path, archivo_reincorporacion_nombre: archivo.nombre } : {}),
+    }).eq("id", fila.nota.id);
+    if (error) ultimoError = error;
+  }
+
+  if (ultimoError) {
+    errEl.textContent = "Algunas notas no se pudieron actualizar: " + ultimoError.message;
+    errEl.classList.remove("hidden");
+  }
+
+  reincLoteFilas = [];
+  closeReincLoteModal();
+  loadNotas();
+  } finally {
+    ocuparBoton(btnLote, false);
+  }
+});
+
+// ---------- Continúan faltos (nota de "sigue faltando" de un día intermedio) ----------
+// A diferencia de "Faltas (PDF grupal)" (que crea una nota nueva) y de
+// "Reincorporación" (que la cierra), esta opción es explícita para el caso de
+// en medio: la persona YA tiene una nota abierta y este PDF solo confirma que
+// sigue faltando. No crea ni cierra nada — solo agrega una entrada a
+// `seguimiento_faltas` de la nota abierta, para que el Informe Administrativo
+// pueda citar el N.º de nota real de ese día si la ausencia llega a escalar.
+let continuanFaltosLoteFilas = [];
+
+function renderContinuanFaltosLoteList() {
+  const el = $("cfLista");
+  if (!continuanFaltosLoteFilas.length) { el.innerHTML = ""; return; }
+  el.innerHTML = continuanFaltosLoteFilas.map((f) => {
+    const nombreLinea = f.candidate
+      ? escapeHtml(nombreInvestigadoVisible(f.candidate, true))
+      : "No se detectó un efectivo en este archivo";
+    const pill = f.nota
+      ? `<span class="pill pill-yes">Expediente encontrado (${f.nota.fecha_reincorporacion ? "ya reincorporado, se agrega igual al historial" : "abierto"}) — falta desde ${formatDate(f.nota.fecha_falta)} · N.º ${escapeHtml(f.nota.numero_nota_falta || "-")}</span>`
+      : `<span class="pill pill-no">No se encontró un expediente que corresponda a esta persona — no se puede registrar</span>`;
+    return `
+      <div class="multi-efectivo-row">
+        <label class="checkbox-row"><input type="checkbox" class="cfCheck" ${f.nota ? "checked" : "disabled"} /></label>
+        <div class="value" style="flex:1">
+          <div>${nombreLinea} <span class="muted small">(${escapeHtml(f.file.name)})</span></div>
+          <div style="display:flex; gap:8px; margin-top:6px">
+            <input type="date" class="cfFechaRow" value="${escapeHtml(f.fecha)}" style="flex:1" />
+            <input type="text" class="cfNumeroRow" value="${escapeHtml(f.numero_nota)}" placeholder="N.º de nota" style="flex:1" />
+            <input type="text" class="cfOficialRow" value="${escapeHtml(f.oficial_constato)}" placeholder="Quién pasó revista" style="flex:1" />
+          </div>
+          ${pill}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+$("btnContinuanFaltosLote")?.addEventListener("click", () => {
+  $("cfArchivo").value = "";
+  $("cfStatus").classList.add("hidden");
+  $("cfError").classList.add("hidden");
+  continuanFaltosLoteFilas = [];
+  renderContinuanFaltosLoteList();
+  $("modalContinuanFaltosLote").classList.remove("hidden");
+});
+$("btnCerrarModalContinuanFaltos")?.addEventListener("click", closeContinuanFaltosLoteModal);
+$("btnCancelarContinuanFaltosLote")?.addEventListener("click", closeContinuanFaltosLoteModal);
+function closeContinuanFaltosLoteModal() { $("modalContinuanFaltosLote").classList.add("hidden"); }
+
+$("cfArchivo")?.addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  const statusEl = $("cfStatus");
+  continuanFaltosLoteFilas = [];
+  renderContinuanFaltosLoteList();
+  if (!files.length) { statusEl.classList.add("hidden"); return; }
+  statusEl.textContent = `Leyendo ${files.length} archivo(s)...`;
+  statusEl.classList.remove("hidden");
+  try {
+    const filas = [];
+    for (const file of files) {
+      if (file.type !== "application/pdf") continue;
+      const text = await extractPdfText(file, (msg) => { statusEl.textContent = `${file.name}: ${msg}`; });
+      const norm = text.replace(/\s+/g, " ");
+      let doc, candidates;
+      try {
+        statusEl.textContent = `${file.name}: interpretando el contenido con IA...`;
+        doc = normalizarResultadoFaltaIA(await extraerDatosNotaIA(text, "falta"));
+        candidates = doc.candidates;
+      } catch (iaErr) {
+        console.error("Extracción por IA falló, se usa el reconocimiento por patrones como respaldo:", iaErr);
+        doc = parseNotaInformativa(text);
+        candidates = (doc.candidates && doc.candidates.length)
+          ? doc.candidates
+          : extractPersonCandidates(norm).map((c) => ({ grado: c.grado, ...splitApellidosNombres(c.nombreCompleto) }));
+      }
+      const numeroRef = extraerNumeroReferencia(text);
+      const base = {
+        file,
+        fecha: doc.fecha_falta || "",
+        numero_nota: doc.numero_nota_falta || "",
+        oficial_constato: doc.oficial_constato || "",
+      };
+      const lista = (candidates && candidates.length)
+        ? candidates
+        : [{ grado: doc.grado || "", apellidos: doc.apellidos || "", nombres: doc.nombres || "" }];
+      for (const c of lista) {
+        const candidate = { grado: (c.grado || "").trim(), apellidos: (c.apellidos || "").trim(), nombres: (c.nombres || "").trim() };
+        const nota = buscarNotaPorSeguimiento(numeroRef, candidate.apellidos ? candidate : null);
+        filas.push({ ...base, candidate: candidate.apellidos ? candidate : null, nota });
+      }
+    }
+    continuanFaltosLoteFilas = filas;
+    renderContinuanFaltosLoteList();
+    const encontrados = filas.filter((f) => f.nota).length;
+    statusEl.textContent = `Se procesaron ${files.length} archivo(s): ${encontrados} de ${filas.length} coinciden con un expediente abierto. Verifique antes de guardar.`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudieron leer algunos archivos automáticamente.";
+  }
+});
+
+$("btnGuardarContinuanFaltosLote")?.addEventListener("click", async (e) => {
+  const errEl = $("cfError");
+  errEl.classList.add("hidden");
+  const btnLote = e.currentTarget;
+
+  const rows = [...document.querySelectorAll("#cfLista .multi-efectivo-row")];
+  const seleccionados = rows
+    .map((row, i) => ({ row, fila: continuanFaltosLoteFilas[i] }))
+    .filter(({ row, fila }) => row.querySelector(".cfCheck").checked && fila?.nota);
+
+  if (!seleccionados.length) {
+    errEl.textContent = "No hay expedientes coincidentes seleccionados para registrar.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  for (const { row, fila } of seleccionados) {
+    const fecha = row.querySelector(".cfFechaRow").value;
+    const numero = row.querySelector(".cfNumeroRow").value.trim();
+    if (!fecha || !numero) {
+      errEl.textContent = `Complete fecha y N.º de nota para ${nombreInvestigadoVisible(fila.nota)}.`;
+      errEl.classList.remove("hidden");
+      return;
+    }
+  }
+
+  ocuparBoton(btnLote, true, "Guardando...");
+  try {
+    // Cada PDF se sube una sola vez (puede cubrir a varias personas del mismo
+    // grupo) y el path se guarda en la entrada de seguimiento de cada quien,
+    // para que el Informe Administrativo pueda incluirlo en el ZIP de anexos.
+    const archivosSubidos = new Map();
+    for (const { fila } of seleccionados) {
+      if (archivosSubidos.has(fila.file)) continue;
+      const path = `seguimiento/${Date.now()}_${fila.file.name}`;
+      const { error: upErr } = await supabase.storage.from("notas").upload(path, fila.file);
+      if (!upErr) archivosSubidos.set(fila.file, { path, nombre: fila.file.name });
+    }
+
+    // Se acumula en memoria por nota (no se relee de la base entre vueltas):
+    // si varias filas seleccionadas apuntan al MISMO expediente (p. ej. tres
+    // "Continúan faltos" distintos de la misma persona, subidos juntos), cada
+    // una debe sumarse a lo que ya llevan las anteriores de esta misma tanda,
+    // no partir de "fila.nota.seguimiento_faltas" desactualizado -- si no, el
+    // último UPDATE pisa a los anteriores y se pierden todas las entradas
+    // menos la última (bug real encontrado 2026-09-15: así se perdieron 2 de
+    // 3 registros de un mismo efectivo).
+    const acumulado = new Map();
+    for (const { row, fila } of seleccionados) {
+      const fecha = row.querySelector(".cfFechaRow").value;
+      const numero = row.querySelector(".cfNumeroRow").value.trim();
+      const oficial = row.querySelector(".cfOficialRow").value.trim();
+      const archivo = archivosSubidos.get(fila.file);
+      const base = acumulado.get(fila.nota.id) || fila.nota.seguimiento_faltas || [];
+      const entradas = [
+        ...base.filter((s) => s.fecha !== fecha),
+        { fecha, numero_nota: numero, oficial_constato: oficial || null, archivo_path: archivo?.path || null, archivo_nombre: archivo?.nombre || null },
+      ];
+      acumulado.set(fila.nota.id, entradas);
+    }
+
+    let ultimoError = null;
+    for (const [notaId, entradas] of acumulado) {
+      const { error } = await supabase.from("notas_informativas").update({ seguimiento_faltas: entradas }).eq("id", notaId);
+      if (error) ultimoError = error;
+    }
+    if (ultimoError) {
+      errEl.textContent = "Algunos expedientes no se pudieron actualizar: " + ultimoError.message;
+      errEl.classList.remove("hidden");
+    } else {
+      toast(`Seguimiento registrado en ${seleccionados.length} expediente(s).`, "ok");
+    }
+    continuanFaltosLoteFilas = [];
+    closeContinuanFaltosLoteModal();
+    loadNotas();
+  } finally {
+    ocuparBoton(btnLote, false);
+  }
+});
+
+// ---------- Faltas desde PDF (uno o varios archivos), en lote ----------
+// Equivalente a la reincorporación en lote, pero para el inicio del trámite:
+// cada PDF de nota de falta -- uno por efectivo o uno grupal con varios --
+// crea una nota nueva por cada efectivo. El código de infracción se completa
+// después, en cada expediente (depende del tiempo ausente, que aún no se sabe).
+let faltasLoteFilas = [];
+
+// ¿Ya hay una nota para esta persona con este mismo N.º de nota de falta, o
+// que siga abierta (todavía no se reincorpora)? Evita duplicar si el mismo
+// PDF grupal se sube dos veces, si la falta ya se registró a mano, o —el caso
+// más importante— si la persona SIGUE faltando y la unidad emite una nota
+// nueva cada día para el mismo hecho (con N.º distinto cada vez). Mientras no
+// se reincorpore, cualquier "falta" nueva de esa persona es la MISMA ausencia
+// que continúa, nunca una segunda: crear otra nota ahí perdería la fecha/hora
+// de inicio real y el código de infracción (L21/L24/G39/MG32) saldría mal
+// cuando por fin regrese. Sin N.º y ya reincorporada, cualquier nota previa de
+// esa persona igual cuenta como posible duplicado (se marca para que el
+// oficial decida).
+function faltaYaRegistrada(numeroNotaFalta, candidate) {
+  if (!candidate || !candidate.apellidos) return null;
+  const objetivo = normalizarNombre(candidate.apellidos, candidate.nombres);
+  const apellidosObj = normalizarTexto(candidate.apellidos);
+  return state.notas.find((n) => {
+    const mismoNombre = normalizarNombre(n.apellidos, n.nombres) === objetivo ||
+      (!candidate.nombres && normalizarTexto(n.apellidos) === apellidosObj);
+    if (!mismoNombre) return false;
+    if (!n.fecha_reincorporacion) return true;
+    if (numeroNotaFalta && n.numero_nota_falta) return n.numero_nota_falta === numeroNotaFalta;
+    return true;
+  }) || null;
+}
+
+// Texto del aviso cuando una fila del lote NO es una falta nueva sino el
+// seguimiento de un expediente que ya existe (ver lib/seguimiento.js).
+function pillNoNuevaHtml(noNueva) {
+  const origen = noNueva.nota
+    ? `expediente N.º ${escapeHtml(noNueva.nota.numero_nota_falta || "-")} (falta del ${escapeHtml(formatDate(noNueva.nota.fecha_falta))})`
+    : noNueva.fila
+      ? `expediente de la nota N.º ${escapeHtml(noNueva.fila.numero_nota_falta || "-")} de este mismo lote`
+      : "";
+  const texto = {
+    reincorporacion: `Este N.º ya está registrado como la reincorporación del ${origen} — no es una falta nueva, no se creará una nota`,
+    seguimiento: `Este N.º ya está registrado como «Continúan faltos» del ${origen} — no es una falta nueva, no se creará una nota`,
+    continuacion: `Es un «Continúa faltando» del ${origen}: se agregará a «Continúan faltos» de ese expediente (no crea una nota nueva)`,
+    continua_sin_madre: `Dice que continúa faltando, pero no hay un expediente abierto de esta persona al que agregarlo. Registre primero su falta original; márquelo solo si de verdad es una falta nueva`,
+    repetida_en_lote: `Ya viene antes en este mismo lote (${origen}) — no se creará dos veces`,
+  }[noNueva.motivo];
+  const clase = noNueva.motivo === "continuacion" ? "pill-info" : "pill-warning";
+  return `<span class="pill ${clase}">${texto}</span>`;
+}
+
+// Motivos por los que una fila NO puede crear una nota: el N.º ya está
+// registrado con seguridad. "continua_sin_madre" es solo un aviso (queda sin
+// marcar pero se puede forzar) porque el aviso puede fallar con PDF mixtos.
+const MOTIVOS_FILA_BLOQUEADA = new Set(["reincorporacion", "seguimiento", "repetida_en_lote"]);
+
+function renderFaltasLoteList() {
+  const el = $("flLista");
+  if (!faltasLoteFilas.length) { el.innerHTML = ""; return; }
+  el.innerHTML = faltasLoteFilas.map((f, i) => {
+    const dup = f.duplicada;
+    const sigueFaltando = dup && !dup.fecha_reincorporacion;
+    const pill = f.noNueva
+      ? pillNoNuevaHtml(f.noNueva)
+      : dup
+      ? sigueFaltando
+        ? `<span class="pill pill-warning">Sigue faltando desde el ${escapeHtml(formatDate(dup.fecha_falta))}${dup.numero_nota_falta ? ` (N.º ${escapeHtml(dup.numero_nota_falta)})` : ""} — no se creará una nota nueva, es la misma ausencia</span>`
+        : `<span class="pill pill-warning">Ya existe una nota de esta persona${dup.numero_nota_falta ? ` (N.º ${escapeHtml(dup.numero_nota_falta)})` : ""} — no se creará de nuevo</span>`
+      : `<span class="pill pill-yes">Se creará una nota nueva</span>`;
+    return `
+      <div class="multi-efectivo-row" data-idx="${i}">
+        <label class="checkbox-row"><input type="checkbox" class="flCheck" ${f.noNueva ? (f.noNueva.motivo === "continuacion" ? "checked" : "") : (dup ? "" : "checked")} ${f.noNueva && MOTIVOS_FILA_BLOQUEADA.has(f.noNueva.motivo) ? "disabled" : ""} /></label>
+        <div class="value" style="flex:1">
+          <div style="display:flex; gap:8px">
+            <input type="text" class="flGrado" value="${escapeHtml(f.grado || "")}" placeholder="Grado" style="flex:1" />
+            <input type="text" class="flApellidos" value="${escapeHtml(f.apellidos || "")}" placeholder="Apellidos" style="flex:2" />
+            <input type="text" class="flNombres" value="${escapeHtml(f.nombres || "")}" placeholder="Nombres" style="flex:2" />
+          </div>
+          <div style="display:flex; gap:8px; margin-top:6px">
+            <input type="date" class="flFechaRow" value="${escapeHtml(f.fecha_falta || "")}" style="flex:1" />
+            <input type="time" class="flHoraRow" value="${escapeHtml(f.hora_falta || "")}" style="flex:1" />
+            <input type="text" class="flNumeroRow" value="${escapeHtml(f.numero_nota_falta || "")}" placeholder="N.º nota de falta" style="flex:1" />
+          </div>
+          <div class="muted small" style="margin-top:4px">Oficial que constató: ${escapeHtml(f.oficial_constato || "—")} · Archivo: ${escapeHtml(f.file.name)}</div>
+          ${pill}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+$("btnFaltasLote").addEventListener("click", () => {
+  $("flArchivo").value = "";
+  $("flStatus").classList.add("hidden");
+  $("flError").classList.add("hidden");
+  faltasLoteFilas = [];
+  renderFaltasLoteList();
+  $("modalFaltasLote").classList.remove("hidden");
+});
+$("btnCerrarModalFaltas").addEventListener("click", closeFaltasLoteModal);
+$("btnCancelarFaltasLote").addEventListener("click", closeFaltasLoteModal);
+function closeFaltasLoteModal() { $("modalFaltasLote").classList.add("hidden"); }
+
+$("flArchivo").addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  const statusEl = $("flStatus");
+  faltasLoteFilas = [];
+  renderFaltasLoteList();
+  if (!files.length) { statusEl.classList.add("hidden"); return; }
+  statusEl.textContent = `Leyendo ${files.length} archivo(s)...`;
+  statusEl.classList.remove("hidden");
+  try {
+    const filas = [];
+    for (const file of files) {
+      if (file.type !== "application/pdf") continue;
+      const text = await extractPdfText(file, (msg) => { statusEl.textContent = `${file.name}: ${msg}`; });
+      const norm = text.replace(/\s+/g, " ");
+      let doc, candidates;
+      try {
+        statusEl.textContent = `${file.name}: interpretando el contenido con IA...`;
+        doc = normalizarResultadoFaltaIA(await extraerDatosNotaIA(text, "falta"));
+        candidates = doc.candidates;
+      } catch (iaErr) {
+        console.error("Extracción por IA falló, se usa el reconocimiento por patrones como respaldo:", iaErr);
+        doc = parseNotaInformativa(text);
+        candidates = (doc.candidates && doc.candidates.length)
+          ? doc.candidates
+          : extractPersonCandidates(norm).map((c) => ({ grado: c.grado, ...splitApellidosNombres(c.nombreCompleto) }));
+      }
+      // Nota de "Corrección": el oficial correcto es el que indica el cuerpo,
+      // no el del párrafo original que copia la nota corregida.
+      const oficialCorr = oficialCorregidoDesdeTexto(text);
+      if (oficialCorr) doc.oficial_constato = oficialCorr;
+      const base = {
+        file,
+        fecha_falta: doc.fecha_falta || "",
+        hora_falta: doc.hora_falta || "",
+        numero_nota_falta: doc.numero_nota_falta || "",
+        oficial_constato: doc.oficial_constato || "",
+        // N.º de la nota a la que este PDF dice responder ("REF."), si lo trae:
+        // permite reconocer un "Continúan faltos" en vez de tomarlo por una
+        // falta nueva.
+        referencia: extraerNumeroReferencia(text),
+        // El texto dice que la persona "continúa faltando" (la misma señal que
+        // usa extractPersonCandidates): es un seguimiento, no una falta nueva,
+        // aunque el REF. no se haya podido leer.
+        esContinua: /continú[a-z]*\s+falt/i.test(norm),
+      };
+      const lista = (candidates && candidates.length)
+        ? candidates
+        : [{ grado: doc.grado || "", apellidos: doc.apellidos || "", nombres: doc.nombres || "" }];
+      for (const c of lista) {
+        filas.push({
+          ...base,
+          grado: (c.grado || "").trim(),
+          apellidos: (c.apellidos || "").trim(),
+          nombres: (c.nombres || "").trim(),
+          duplicada: faltaYaRegistrada(base.numero_nota_falta, c),
+        });
+      }
+    }
+    // Se clasifica DESPUÉS de leer todos los archivos: una nota que continúa a
+    // otra puede venir en el mismo lote que su madre (que todavía no está en
+    // la base) y en cualquier orden.
+    for (const f of filas) f.noNueva = clasificarNotaEntrante(f, state.notas, filas);
+    faltasLoteFilas = filas;
+    renderFaltasLoteList();
+    const nuevas = filas.filter((f) => !f.duplicada && !f.noNueva).length;
+    const continuan = filas.filter((f) => f.noNueva?.motivo === "continuacion").length;
+    statusEl.textContent = `Se procesaron ${files.length} archivo(s): ${filas.length} persona(s), ${nuevas} nueva(s)${continuan ? ` y ${continuan} «Continúa faltando» (se agregan a su expediente)` : ""}. Verifique los datos y desmarque lo que no corresponda antes de guardar.`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudieron leer algunos archivos automáticamente.";
+  }
+});
+
+$("btnGuardarFaltasLote").addEventListener("click", async (e) => {
+  const errEl = $("flError");
+  errEl.classList.add("hidden");
+  const btnLote = e.currentTarget;
+  const rows = [...document.querySelectorAll("#flLista .multi-efectivo-row")];
+  const seleccionados = rows
+    .map((row, i) => ({ row, fila: faltasLoteFilas[i] }))
+    .filter(({ row }) => row.querySelector(".flCheck").checked);
+
+  if (!seleccionados.length) {
+    errEl.textContent = "No hay faltas marcadas para registrar.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  // Dos tipos de fila: las faltas NUEVAS (crean una nota) y los "Continúa
+  // faltando" (se agregan a `seguimiento_faltas` del expediente que continúan,
+  // sin crear nada). Subir un "continúa" por aquí ya no deja una nota de más.
+  const registros = [];
+  const continuaciones = [];
+  for (const { row, fila } of seleccionados) {
+    const fecha_falta = row.querySelector(".flFechaRow").value;
+    const numero_nota_falta = row.querySelector(".flNumeroRow").value.trim();
+    if (fila.noNueva?.motivo === "continuacion") {
+      if (!fecha_falta || !numero_nota_falta) {
+        errEl.textContent = `Complete fecha y N.º de nota del «Continúa faltando» de ${nombreInvestigadoVisible(fila)}.`;
+        errEl.classList.remove("hidden");
+        return;
+      }
+      continuaciones.push({ fila, file: fila.file, fecha: fecha_falta, numero_nota: numero_nota_falta, oficial_constato: fila.oficial_constato || null, destino: fila.noNueva });
+      continue;
+    }
+    const grado = row.querySelector(".flGrado").value.trim();
+    const apellidos = row.querySelector(".flApellidos").value.trim();
+    const nombres = row.querySelector(".flNombres").value.trim();
+    const hora_falta = row.querySelector(".flHoraRow").value || null;
+    if (!apellidos || !nombres || !fecha_falta || !numero_nota_falta) {
+      errEl.textContent = `Complete apellidos, nombres, fecha y N.º de nota para ${apellidos || "(sin apellido)"} ${nombres}.`;
+      errEl.classList.remove("hidden");
+      return;
+    }
+    registros.push({ fila, file: fila.file, grado, apellidos, nombres, fecha_falta, hora_falta, numero_nota_falta, oficial_constato: fila.oficial_constato || null });
+  }
+
+  // Un "continúa" cuya falta original viene en ESTE mismo lote necesita que esa
+  // falta también esté marcada; si no, no habría a qué agregarlo.
+  const sinMadre = continuaciones.find((c) => c.destino.fila && !registros.some((r) => r.fila === c.destino.fila));
+  if (sinMadre) {
+    errEl.textContent = `El «Continúa faltando» de ${nombreInvestigadoVisible(sinMadre.fila)} pertenece a la falta N.º ${sinMadre.destino.fila.numero_nota_falta || "-"} de este mismo lote, que no está marcada. Márquela también, o desmarque este.`;
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  ocuparBoton(btnLote, true, "Registrando...");
+  try {
+  // Cada PDF se sube una sola vez; el path se enlaza a todas sus notas.
+  const archivosSubidos = new Map();
+  for (const r of registros) {
+    if (archivosSubidos.has(r.file)) continue;
+    const path = `lote_faltas/${Date.now()}_${r.file.name}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, r.file);
+    if (!upErr) archivosSubidos.set(r.file, { path, nombre: r.file.name });
+  }
+  // Los "continúa" se guardan donde ya los guarda «Continúan faltos» (carpeta
+  // `seguimiento/`), para que el Informe Administrativo los incluya en el .zip.
+  const seguimientoSubidos = new Map();
+  for (const c of continuaciones) {
+    if (seguimientoSubidos.has(c.file)) continue;
+    const path = `seguimiento/${Date.now()}_${c.file.name}`;
+    const { error: upErr } = await supabase.storage.from("notas").upload(path, c.file);
+    if (!upErr) seguimientoSubidos.set(c.file, { path, nombre: c.file.name });
+  }
+
+  // Puesto según el rol guardado de cada fecha (best-effort; si no hay rol o la
+  // IA no ubica a la persona, queda null y se puede completar luego en el detalle).
+  const puestosRol = await Promise.all(registros.map(async (r) => {
+    const rol = rolGuardadoParaFecha(r.fecha_falta);
+    if (!rol?.texto_extraido) return null;
+    try {
+      const ia = await extraerPuestoRolIA(rol.texto_extraido, `${r.apellidos} ${r.nombres}`, r.fecha_falta);
+      const ini = ia?.fecha_rol_inicio, fin = ia?.fecha_rol_fin || ini;
+      if (ini && (r.fecha_falta < ini || r.fecha_falta > fin)) return null;
+      return ia?.puesto || null;
+    } catch { return null; }
+  }));
+
+  const payloads = registros.map((r, i) => {
+    const ef = ubicarInvestigadoEnEfectivos(r, state.efectivos);
+    return {
+      grado: r.grado,
+      apellidos: r.apellidos,
+      nombres: r.nombres,
+      fecha_falta: r.fecha_falta,
+      hora_falta: r.hora_falta,
+      numero_nota_falta: r.numero_nota_falta,
+      codigo_infraccion: "",
+      oficial_constato: r.oficial_constato,
+      // Igual que en la creación individual: es lo que usa la RLS para decidir
+      // qué notas ve cada oficial.
+      oficial_constato_cip: buscarOficialConstato(r.oficial_constato, state.efectivos)?.cip || null,
+      investigado_cip: ef?.cip || null,
+      investigado_dni: ef?.dni || null,
+      puesto_rol: puestosRol[i],
+      created_by: state.session.user.id,
+    };
+  });
+
+  let inserted = [];
+  if (registros.length) {
+    const { data, error } = await supabase
+      .from("notas_informativas")
+      .insert(payloads)
+      .select();
+
+    if (error) {
+      errEl.textContent = "No se pudieron registrar las faltas: " + error.message;
+      errEl.classList.remove("hidden");
+      return;
+    }
+    inserted = data || [];
+
+    for (let i = 0; i < inserted.length; i++) {
+      const archivo = archivosSubidos.get(registros[i].file);
+      if (!archivo) continue;
+      await supabase.from("notas_informativas")
+        .update({ archivo_nota_path: archivo.path, archivo_nota_nombre: archivo.nombre })
+        .eq("id", inserted[i].id);
+    }
+  }
+
+  // "Continúa faltando": se suma a `seguimiento_faltas` del expediente al que
+  // pertenece -- el que ya estaba en la base o el que se acaba de crear arriba
+  // desde este mismo lote. Se acumula en memoria por expediente para que varias
+  // filas del mismo no se pisen entre sí (mismo cuidado que en «Continúan faltos»).
+  const idPorFila = new Map(registros.map((r, i) => [r.fila, inserted[i]?.id]));
+  const acumulado = new Map();
+  let continuanAgregados = 0;
+  for (const c of continuaciones) {
+    const notaBase = c.destino.nota || null;
+    const id = notaBase ? notaBase.id : idPorFila.get(c.destino.fila);
+    if (!id) continue;
+    const previas = acumulado.get(id) || (notaBase && Array.isArray(notaBase.seguimiento_faltas) ? notaBase.seguimiento_faltas : []);
+    const archivo = seguimientoSubidos.get(c.file);
+    acumulado.set(id, [
+      ...previas.filter((s) => s.fecha !== c.fecha),
+      { fecha: c.fecha, numero_nota: c.numero_nota, oficial_constato: c.oficial_constato, archivo_path: archivo?.path || null, archivo_nombre: archivo?.nombre || null },
+    ]);
+    continuanAgregados++;
+  }
+  let errorContinua = null;
+  for (const [id, entradas] of acumulado) {
+    const { error } = await supabase.from("notas_informativas").update({ seguimiento_faltas: entradas }).eq("id", id);
+    if (error) errorContinua = error;
+  }
+
+  const partes = [];
+  if (inserted.length) partes.push(`${inserted.length} nota(s) nueva(s)`);
+  if (continuanAgregados) partes.push(`${continuanAgregados} «Continúa faltando» agregado(s) a su expediente`);
+  if (errorContinua) toast("No se pudieron guardar algunos «Continúa faltando»: " + errorContinua.message);
+  else if (partes.length) toast(`Registrado: ${partes.join(" y ")}.`, "ok");
+
+  faltasLoteFilas = [];
+  closeFaltasLoteModal();
+  loadNotas();
+  } finally {
+    ocuparBoton(btnLote, false);
+  }
+});
+
+// ---------- Directivas internas ----------
+async function loadDirectivasView() {
+  try {
+    state.directivas = await listarDirectivas(supabase);
+  } catch (err) {
+    console.error(err);
+    state.directivas = [];
+  }
+  renderDirectivasList(state.directivas);
+}
+
+function renderDirectivasList(list) {
+  const container = $("directivasList");
+  if (!container) return;
+  $("directivasEmpty").classList.toggle("hidden", list.length > 0);
+  const isAdmin = state.role === "admin";
+  container.innerHTML = list.map((d) => `
+    <div class="directiva-card" data-id="${d.id}">
+      <div class="directiva-card-header">
+        <h3>${escapeHtml(d.titulo)}${d.numero_documento ? ` <span class="muted small">(${escapeHtml(d.numero_documento)})</span>` : ""}</h3>
+        <span class="pill ${d.activa ? "pill-yes" : "pill-inactive"}">${d.activa ? "Activa" : "Inactiva"}</span>
+      </div>
+      <div class="directiva-contenido">${escapeHtml(d.contenido)}</div>
+      ${isAdmin ? `
+        <div class="directiva-actions">
+          <button type="button" class="btn-secondary btn-editar-directiva">Editar</button>
+          <button type="button" class="btn-danger btn-eliminar-directiva">Eliminar</button>
+        </div>
+      ` : ""}
+    </div>
+  `).join("");
+
+  if (!isAdmin) return;
+  container.querySelectorAll(".btn-editar-directiva").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const id = e.currentTarget.closest(".directiva-card").dataset.id;
+      const directiva = state.directivas.find((d) => String(d.id) === id);
+      if (directiva) abrirModalDirectiva(directiva);
+    });
+  });
+  container.querySelectorAll(".btn-eliminar-directiva").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const id = e.currentTarget.closest(".directiva-card").dataset.id;
+      if (!confirm("¿Eliminar esta directiva? Esta acción no se puede deshacer.")) return;
+      try {
+        await eliminarDirectiva(supabase, id);
+        loadDirectivasView();
+      } catch (err) {
+        toast("No se pudo eliminar: " + (err.message || err));
+      }
+    });
+  });
+}
+
+function abrirModalDirectiva(directiva) {
+  $("directivaForm").reset();
+  $("dvId").value = directiva?.id || "";
+  $("dvTitulo").value = directiva?.titulo || "";
+  $("dvNumero").value = directiva?.numero_documento || "";
+  $("dvContenido").value = directiva?.contenido || "";
+  $("dvActiva").checked = directiva ? !!directiva.activa : true;
+  $("dvArchivoStatus").classList.add("hidden");
+  $("directivaError").classList.add("hidden");
+  $("directivaModalTitulo").textContent = directiva ? "Editar directiva" : "Nueva directiva";
+  $("modalDirectiva").classList.remove("hidden");
+}
+function closeModalDirectiva() { $("modalDirectiva").classList.add("hidden"); }
+
+$("btnNuevaDirectiva")?.addEventListener("click", () => abrirModalDirectiva(null));
+$("btnCerrarModalDirectiva")?.addEventListener("click", closeModalDirectiva);
+$("btnCancelarDirectiva")?.addEventListener("click", closeModalDirectiva);
+
+$("dvArchivo")?.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  const statusEl = $("dvArchivoStatus");
+  if (!file) { statusEl.classList.add("hidden"); return; }
+  statusEl.textContent = "Leyendo archivo...";
+  statusEl.classList.remove("hidden");
+  try {
+    let texto = "";
+    if (file.type === "application/pdf") {
+      texto = await extractPdfText(file, (msg) => { statusEl.textContent = msg; });
+    } else if (file.type.startsWith("image/")) {
+      texto = await extractImagenTextoConOcr(file, (msg) => { statusEl.textContent = msg; });
+    }
+    texto = texto.trim();
+    if (texto) {
+      if (!$("dvContenido").value.trim()) $("dvContenido").value = texto;
+      statusEl.textContent = "Texto extraído del archivo con IA. Revíselo antes de guardar — puede tener errores puntuales en fragmentos poco legibles.";
+    } else {
+      statusEl.textContent = "No se pudo extraer texto del archivo. Péguelo usted mismo en el campo de abajo.";
+    }
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "No se pudo leer el archivo automáticamente. Péguelo usted mismo en el campo de abajo.";
+  }
+});
+
+$("directivaForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("directivaError");
+  errEl.classList.add("hidden");
+  const id = $("dvId").value || null;
+  const titulo = $("dvTitulo").value.trim();
+  const numero_documento = $("dvNumero").value.trim();
+  const contenido = $("dvContenido").value.trim();
+  const activa = $("dvActiva").checked;
+  if (!titulo || !contenido) return;
+
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(submitBtn, true, "Guardando...");
+  try {
+    const savedId = await guardarDirectiva(supabase, { id, titulo, numero_documento, contenido, activa, userId: state.session.user.id });
+    const file = $("dvArchivo").files[0];
+    if (file) {
+      const { path, nombre } = await subirArchivoDirectiva(supabase, savedId, file);
+      await guardarDirectiva(supabase, { id: savedId, titulo, numero_documento, contenido, activa, archivo_path: path, archivo_nombre: nombre });
+    }
+    closeModalDirectiva();
+    loadDirectivasView();
+  } catch (err) {
+    console.error(err);
+    errEl.textContent = "Error: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(submitBtn, false);
+  }
+});
+
+// ---------- Cumplimiento: documentos institucionales y firma electrónica ----------
+// Firma electrónica simple: el firmante ya está autenticado (con su CIP o su
+// correo, como cualquier ingreso a la app); al hacer clic en "Firmar" queda un
+// registro inalterable de quién, con qué cargo, cuándo, y sobre qué versión
+// exacta del texto. Si el admin edita el contenido, sube la versión y cada
+// firmante debe volver a firmar — una firma vieja nunca se reinterpreta como
+// válida para un texto que esa persona no llegó a leer.
+function fechaHoraFirma(iso) {
+  if (!iso) return "";
+  const [anio, mes, dia] = fechaLima(iso).split("-");
+  return `${dia}/${mes}/${anio} ${horaLima(iso)}`;
+}
+
+async function loadCumplimientoView() {
+  try {
+    [state.cumplimientoDocs, state.cumplimientoFirmas] = await Promise.all([
+      listarDocumentosInstitucionales(supabase),
+      listarFirmasDocumentos(supabase),
+    ]);
+  } catch (err) {
+    console.error(err);
+    state.cumplimientoDocs = [];
+    state.cumplimientoFirmas = [];
+  }
+  renderCumplimientoLista();
+}
+
+function renderCumplimientoLista() {
+  const container = $("cumplimientoLista");
+  if (!container) return;
+  const list = state.cumplimientoDocs;
+  $("cumplimientoEmpty").classList.toggle("hidden", list.length > 0);
+  const isAdmin = state.role === "admin";
+  const miId = state.session?.user?.id;
+
+  container.innerHTML = list.map((d) => {
+    const firmasDoc = state.cumplimientoFirmas.filter((f) => f.documento_id === d.id);
+    const firmasVigentes = firmasDoc.filter((f) => f.documento_version === d.version);
+    const firmasObsoletas = firmasDoc.length - firmasVigentes.length;
+    const miFirma = firmasVigentes.find((f) => f.firmante_id === miId);
+
+    return `
+    <div class="directiva-card cumplimiento-card" data-id="${d.id}" data-version="${d.version}">
+      <div class="directiva-card-header">
+        <h3>${escapeHtml(d.titulo)}</h3>
+        <span class="pill ${miFirma ? "pill-yes" : "pill-warning"}">${miFirma ? "Firmado por usted" : "Pendiente de su firma"}</span>
+      </div>
+      <div class="directiva-contenido">${escapeHtml(d.contenido)}</div>
+      ${isAdmin ? `<div class="directiva-actions"><button type="button" class="btn-secondary btn-editar-documento-institucional">Editar contenido</button></div>` : ""}
+      <div class="firmas-lista">
+        <h4 class="firmas-titulo">Firmas registradas — versión ${d.version}</h4>
+        ${firmasVigentes.length ? firmasVigentes.map((f) => `
+          <div class="firma-item">${svgIco("check")}<span><strong>${escapeHtml(f.firmante_nombre)}</strong>${f.firmante_grado ? ` — ${escapeHtml(f.firmante_grado)}` : ""} · ${escapeHtml(f.firmante_cargo)}<br><span class="muted small">${fechaHoraFirma(f.firmado_at)}</span></span></div>
+        `).join("") : `<p class="muted small">Nadie ha firmado esta versión todavía.</p>`}
+        ${firmasObsoletas > 0 ? `<p class="muted small">${firmasObsoletas} firma(s) de una versión anterior del texto, ya no vigente.</p>` : ""}
+      </div>
+      ${miFirma ? "" : `
+        <form class="firma-form" data-documento-id="${d.id}" data-version="${d.version}">
+          <label>Grado <input type="text" class="firma-grado-input" placeholder="Ej. Comandante PNP" /></label>
+          <label>Nombre y apellidos <input type="text" class="firma-nombre-input" required placeholder="Ej. REYES MEDINA, Jorge Luis" /></label>
+          <label>Cargo <input type="text" class="firma-cargo-input" required placeholder="Ej. Jefe de la unidad" /></label>
+          <p class="firma-error error hidden" role="alert"></p>
+          <button type="submit" class="btn-primary">${svgIco("firmar")}Firmar</button>
+        </form>
+      `}
+    </div>
+  `;
+  }).join("");
+
+  if (isAdmin) {
+    container.querySelectorAll(".btn-editar-documento-institucional").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const id = e.currentTarget.closest(".cumplimiento-card").dataset.id;
+        const doc = state.cumplimientoDocs.find((d) => String(d.id) === id);
+        if (doc) abrirModalDocumentoInstitucional(doc);
+      });
+    });
+  }
+
+  container.querySelectorAll(".firma-form").forEach((form) => {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errEl = form.querySelector(".firma-error");
+      errEl.classList.add("hidden");
+      const documentoId = form.dataset.documentoId;
+      const version = Number(form.dataset.version);
+      const grado = form.querySelector(".firma-grado-input").value.trim();
+      const nombre = form.querySelector(".firma-nombre-input").value.trim();
+      const cargo = form.querySelector(".firma-cargo-input").value.trim();
+      if (!nombre || !cargo) return;
+
+      const submitBtn = form.querySelector("button[type=submit]");
+      ocuparBoton(submitBtn, true, "Firmando...");
+      try {
+        await firmarDocumento(supabase, { documentoId, version, firmanteId: state.session.user.id, nombre, grado, cargo });
+        toast("Firma registrada.", "ok");
+        await loadCumplimientoView();
+      } catch (err) {
+        console.error(err);
+        errEl.textContent = "Error: " + (err.message || err);
+        errEl.classList.remove("hidden");
+        ocuparBoton(submitBtn, false);
+      }
+    });
+  });
+}
+
+function abrirModalDocumentoInstitucional(doc) {
+  $("documentoInstitucionalForm").reset();
+  $("diId").value = doc.id;
+  $("diContenido").value = doc.contenido;
+  $("documentoInstitucionalError").classList.add("hidden");
+  $("documentoInstitucionalModalTitulo").textContent = `Editar: ${doc.titulo}`;
+  $("modalDocumentoInstitucional").classList.remove("hidden");
+}
+function closeModalDocumentoInstitucional() { $("modalDocumentoInstitucional").classList.add("hidden"); }
+
+$("btnCerrarModalDocumentoInstitucional")?.addEventListener("click", closeModalDocumentoInstitucional);
+$("btnCancelarDocumentoInstitucional")?.addEventListener("click", closeModalDocumentoInstitucional);
+
+$("documentoInstitucionalForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("documentoInstitucionalError");
+  errEl.classList.add("hidden");
+  const id = $("diId").value;
+  const contenido = $("diContenido").value.trim();
+  if (!contenido) return;
+  const doc = state.cumplimientoDocs.find((d) => String(d.id) === id);
+  if (!doc) return;
+
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(submitBtn, true, "Guardando...");
+  try {
+    await actualizarContenidoDocumentoInstitucional(supabase, { id, contenido, version: doc.version, userId: state.session.user.id });
+    closeModalDocumentoInstitucional();
+    toast("Nueva versión guardada. Cada firmante deberá volver a firmar.", "ok");
+    await loadCumplimientoView();
+  } catch (err) {
+    console.error(err);
+    errEl.textContent = "Error: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(submitBtn, false);
+  }
+});
+
+// ---------- Asistente de consulta flotante ----------
+function agregarMensajeAsistente(role, texto) {
+  state.asistenteHistorial.push({ role, texto });
+  const div = document.createElement("div");
+  div.className = `asistente-msg ${role === "asistente" ? "asistente-msg-bot" : "asistente-msg-user"}`;
+  div.textContent = texto;
+  const mensajesEl = $("asistenteMensajes");
+  mensajesEl.appendChild(div);
+  mensajesEl.scrollTop = mensajesEl.scrollHeight;
+}
+
+$("btnAbrirAsistente")?.addEventListener("click", () => {
+  $("asistenteWidget").classList.remove("hidden");
+  if (!state.asistenteHistorial.length) {
+    agregarMensajeAsistente("asistente", "Hola, soy el asistente de consulta de Moral y Disciplina. Puede preguntarme sobre el procedimiento (Nota Informativa → reincorporación → descargo → Orden de Sanción), sobre L21/L24, o sobre las directivas internas cargadas en el sistema.");
+  }
+});
+$("btnCerrarAsistente")?.addEventListener("click", () => {
+  $("asistenteWidget").classList.add("hidden");
+});
+
+$("asistenteForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("asistenteInput");
+  const pregunta = input.value.trim();
+  if (!pregunta) return;
+  agregarMensajeAsistente("oficial", pregunta);
+  input.value = "";
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  ocuparBoton(submitBtn, true);
+  try {
+    const directivas = directivasParaIA(state.directivas.length ? state.directivas : await listarDirectivas(supabase));
+    const { data, error } = await supabase.functions.invoke("asistente-md", {
+      body: {
+        catalogo: CATALOGO_ASISTENTE,
+        directivas,
+        historial: state.asistenteHistorial.slice(0, -1).slice(-8),
+        pregunta,
+      },
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    agregarMensajeAsistente("asistente", data?.respuesta || "No se pudo obtener una respuesta.");
+  } catch (err) {
+    console.error(err);
+    agregarMensajeAsistente("asistente", "Ocurrió un error al consultar: " + (err.message || err));
+  } finally {
+    ocuparBoton(submitBtn, false);
+  }
+});
+
+// ---------- Panel de métricas ----------
+let chartsPanel = {};
+
+// Mismas etapas que ya se muestran en el detalle de cada nota (Acta de No
+// Descargo / Orden de Sanción), resumidas en una sola categoría por caso
+// para el gráfico de estado.
+// Un expediente está "concluido" cuando la Orden de Sanción ya fue notificada
+// al investigado (con su cargo firmado): en este módulo no queda nada más que
+// hacer salvo el cierre administrativo en Recepción.
+function notaConcluida(n) {
+  return !!n.orden_notificada_at || !!n.archivo_leve_generada_at;
+}
+
+// Grave/Muy Grave (con texto legal ya cargado en INFRACCIONES_GRAVES): el
+// trámite de esta app es corto y distinto al de leves -- Falta -> (con o sin
+// reincorporación) -> Informe Administrativo -- así que las 3 funciones de
+// abajo (estado, color, mini-stepper) necesitan su propia rama; si no,
+// mostraban "Reincorporación pendiente" para siempre y un stepper de 5 pasos
+// (Imputación/Descargo/Sanción) que un caso así nunca completa.
+function esGraveConTextoLegal(n) {
+  const leve = /^L/i.test((n.codigo_infraccion || "").trim());
+  const codigo = (n.codigo_infraccion || "").trim().toUpperCase().replace(/\s+/g, "");
+  return !leve && !!INFRACCIONES_GRAVES[codigo];
+}
+
+function estadoDeNota(n) {
+  if (n.archivo_leve_generada_at) return "Archivado (sin sanción)";
+  if (notaConcluida(n)) return "Concluida";
+  if (esGraveConTextoLegal(n)) return n.fecha_reincorporacion ? "Informe Administrativo (cerrado)" : "Informe Administrativo (en curso)";
+  if (!n.fecha_reincorporacion) return "Reincorporación pendiente";
+  if (!n.imputacion_generada_at) return "Notificación pendiente";
+  if (n.orden_sancion_generada_at) return "Sanción generada";
+  if (n.fecha_descargo) return "Con descargo, evaluando";
+  if (plazoDescargoVencido(n)) return "Plazo vencido, pendiente";
+  return "Plazo de descargo vigente";
+}
+
+function claseEstadoNota(n) {
+  if (notaConcluida(n)) return "pill-yes";
+  if (esGraveConTextoLegal(n)) return "pill-warning";
+  if (n.orden_sancion_generada_at) return "pill-yes";
+  if (n.fecha_descargo) return "pill-info";
+  if (n.fecha_reincorporacion && n.imputacion_generada_at && plazoDescargoVencido(n)) return "pill-danger";
+  if (n.imputacion_generada_at) return "pill-warning";
+  return "pill-neutral";
+}
+
+// Bajo el nombre en la lista: cuántos días de "Continúan faltos" tiene el
+// expediente, para no tener que abrirlo para saber que siguió sin presentarse.
+function continuanFaltosChipHtml(n) {
+  const entradas = entradasSeguimiento(n);
+  if (!entradas.length) return "";
+  const corto = (s) => `${formatDate(s.fecha).slice(0, 5)}${s.numero_nota ? ` · N.º ${escapeHtml(s.numero_nota)}` : ""}`;
+  const resto = entradas.length > 3 ? ` (+${entradas.length - 3} anteriores)` : "";
+  const detalle = entradas.map((s) => `${formatDate(s.fecha)} · N.º ${s.numero_nota || "-"}${s.archivo_nombre ? ` · ${s.archivo_nombre}` : ""}`).join("\n");
+  return `<div class="muted small" title="${escapeHtml(detalle)}">Continúan faltos (${entradas.length}): ${entradas.slice(-3).map(corto).join(" | ")}${resto}</div>`;
+}
+
+function progresoNotaHtml(n) {
+  const concluida = notaConcluida(n);
+  if (esGraveConTextoLegal(n) && !concluida) {
+    return `<div class="case-progress" title="${escapeHtml(estadoDeNota(n))}">
+      <div class="case-progress-steps"><span class="is-done">1</span><span class="is-current">2</span></div>
+      <span class="pill ${claseEstadoNota(n)}">${escapeHtml(estadoDeNota(n))}</span>
+    </div>`;
+  }
+  if (n.archivo_leve_generada_at) {
+    // Cerrado sin pasar por Sanción -- el stepper de 5 pasos de abajo nunca
+    // llega al 5 para este caso, así que se le da su propio cierre de 3.
+    return `<div class="case-progress is-concluida" title="${escapeHtml(estadoDeNota(n))}">
+      <div class="case-progress-steps"><span class="is-done">1</span><span class="is-done">2</span><span class="is-done">3</span></div>
+      <span class="pill ${claseEstadoNota(n)}">✓ ${escapeHtml(estadoDeNota(n))}</span>
+    </div>`;
+  }
+  const paso = n.orden_sancion_generada_at ? 5 : n.fecha_descargo ? 4 : n.imputacion_generada_at ? 3 : n.fecha_reincorporacion ? 2 : 1;
+  const etiquetas = ["Falta", "Reinc.", "Imput.", "Descargo", "Sanción"];
+  return `<div class="case-progress ${concluida ? "is-concluida" : ""}" title="${escapeHtml(estadoDeNota(n))}">
+    <div class="case-progress-steps">${etiquetas.map((etiqueta, i) => `<span class="${i + 1 <= paso ? "is-done" : ""} ${i + 1 === paso && !concluida ? "is-current" : ""}">${i + 1}</span>`).join("")}</div>
+    <span class="pill ${claseEstadoNota(n)}">${concluida ? "✓ " : ""}${escapeHtml(estadoDeNota(n))}</span>
+  </div>`;
+}
+
+// Una sola recomendación visible evita que el oficial tenga que leer toda la
+// ruta del trámite para saber qué acción corresponde ahora.
+function siguienteAccionNotaHtml(nota, isAdmin, actaGenerada) {
+  const leve = /^L/i.test((nota.codigo_infraccion || "").trim());
+  const imputacion = !!nota.imputacion_generada_at;
+  const plazoVencido = imputacion && !nota.fecha_descargo && plazoDescargoVencido(nota);
+  const listoDescargo = imputacion && (!!nota.fecha_descargo || plazoVencido);
+  const hayEvaluacion = !!(nota.sancion_analisis && String(nota.sancion_analisis).trim());
+  const orden = !!nota.orden_sancion_generada_at;
+  const notif = !!nota.orden_notificada_at;
+
+  let icono = "flecha";
+  let titulo = "Complete los datos de la falta";
+  let detalle = "Registre el código de infracción para poder continuar con el trámite.";
+  let tono = "is-pending";
+  if (!nota.codigo_infraccion) {
+    // valores por defecto
+  } else if (!leve) {
+    const codigoNormalizado = (nota.codigo_infraccion || "").trim().toUpperCase().replace(/\s+/g, "");
+    if (INFRACCIONES_GRAVES[codigoNormalizado]) {
+      icono = "descargar"; titulo = "Genere el Informe Administrativo"; tono = "is-ready";
+      detalle = nota.fecha_reincorporacion
+        ? "Complete las firmas y descargue el Informe Administrativo (.zip) que documenta el caso y lo remite al órgano disciplinario competente."
+        : "La ausencia sigue en curso, pero ya puede generar el Informe Administrativo \"a la fecha\": no hace falta esperar la reincorporación.";
+    } else {
+      icono = "info"; titulo = "Falta grave o muy grave";
+      detalle = "Todavía no hay texto legal verificado en la app para este código, así que el Informe Administrativo no está disponible aquí. Continúe el trámite según el procedimiento que corresponde.";
+    }
+  } else if (nota.archivo_leve_generada_at) {
+    icono = "check"; titulo = "Trámite concluido (archivado)"; tono = "is-done";
+    detalle = "El caso se archivó sin sanción: la conducta no se adecuaba a ningún código del Anexo I.";
+  } else if (!nota.fecha_reincorporacion) {
+    titulo = "Registre la reincorporación";
+    detalle = "Complete fecha, hora y N.º de nota de reincorporación para habilitar la Imputación.";
+  } else if (!imputacion) {
+    icono = "descargar"; titulo = "Genere la Imputación"; tono = "is-ready";
+    detalle = "Revise los datos y descargue la Imputación; su descarga fija la fecha de notificación y arranca el plazo del descargo.";
+  } else if (!nota.fecha_descargo && !plazoVencido) {
+    icono = "reloj"; titulo = "Espere o registre el descargo";
+    detalle = `El plazo está vigente hasta el ${formatDate(fechaLimiteDescargo(nota))}. Si el investigado lo presenta antes, regístrelo aquí.`;
+  } else if (plazoVencido && !actaGenerada) {
+    icono = "alerta"; titulo = "Genere el Acta de No Descargo"; tono = "is-urgent";
+    detalle = "El plazo venció sin descargo registrado. Genere el acta antes de continuar con la evaluación.";
+  } else if (listoDescargo && !hayEvaluacion) {
+    icono = "estrella"; titulo = "Complete la evaluación"; tono = "is-ready";
+    detalle = "Resuma el descargo, redacte el análisis y elija el tercio de la sanción.";
+  } else if (listoDescargo && !orden) {
+    icono = "descargar"; titulo = "Genere la Orden de Sanción"; tono = "is-ready";
+    detalle = "La evaluación está lista. Revise los datos y descargue la Orden.";
+  } else if (orden && !notif) {
+    icono = "firmar"; titulo = "Cargue el expediente firmado";
+    detalle = "Suba el legajo completo firmado en un PDF (la IA revisa que esté completo) y confirme la fecha de notificación.";
+  } else if (orden && notif && isAdmin) {
+    icono = "check"; titulo = "Registre el expediente cerrado"; tono = "is-ready";
+    detalle = "En Recepción, adjunte el expediente firmado, la HT y el Oficio para archivarlo y respaldarlo en Drive.";
+  } else if (orden && notif) {
+    icono = "check"; titulo = "Trámite concluido"; tono = "is-done";
+    detalle = "La Orden fue notificada. El cierre administrativo lo realiza el administrador en Recepción.";
+  }
+  return `<aside class="next-action ${tono}" aria-label="Siguiente acción recomendada">
+    <span class="next-action-icon">${svgIco(icono)}</span>
+    <div><span class="eyebrow">Siguiente paso</span><strong>${escapeHtml(titulo)}</strong><p>${escapeHtml(detalle)}</p></div>
+  </aside>`;
+}
+
+// Guía del trámite: cada etapa con su estado -- completo / pendiente /
+// vencido / no disponible todavía -- para que el oficial vea de un vistazo
+// qué sigue sin abrir cada sección.
+function cronologiaNotaHtml(nota) {
+  const LABEL = { completo: "Completo", pendiente: "Pendiente", vencido: "Vencido", nd: "No disponible" };
+  const ICON = { completo: "✓", pendiente: "•", vencido: "!", nd: "–" };
+  const render = (etapas) => `<ol class="tramite-etapas">${etapas.map((e) => `
+    <li class="tramite-etapa te-${e.estado}">
+      <span class="te-icon">${ICON[e.estado]}</span>
+      <span class="te-nombre">${escapeHtml(e.titulo)}${e.fecha && e.estado === "completo" ? ` <span class="muted small">— ${formatDate(String(e.fecha).slice(0, 10))}</span>` : ""}</span>
+      <span class="te-estado">${LABEL[e.estado]}</span>
+    </li>`).join("")}</ol>`;
+
+  // Los "Continúan faltos" van entre el hecho y la reincorporación, que es el
+  // orden real en que ocurren.
+  const diasSeguimiento = entradasSeguimiento(nota).length;
+  const continuan = diasSeguimiento
+    ? [{ titulo: `Continúan faltos — ${diasSeguimiento} ${diasSeguimiento === 1 ? "día" : "días"}`, fecha: null, estado: "completo" }]
+    : [];
+
+  const leve = /^L/i.test((nota.codigo_infraccion || "").trim());
+  const codigoNormalizado = (nota.codigo_infraccion || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!leve && INFRACCIONES_GRAVES[codigoNormalizado]) {
+    // Grave o Muy Grave: el trámite de esta app termina en el Informe
+    // Administrativo (documenta y REMITE el caso a otra instancia), no en
+    // la cadena Imputación → Orden de Sanción, que es solo para leves. Sin
+    // esta rama, las etapas de abajo quedaban en "No disponible" para
+    // siempre y no mencionaban la acción que sí aplica aquí.
+    return render([
+      { titulo: "Hecho registrado", fecha: nota.created_at, estado: "completo" },
+      ...continuan,
+      { titulo: "Reincorporación", fecha: nota.fecha_reincorporacion, estado: nota.fecha_reincorporacion ? "completo" : "pendiente" },
+      { titulo: "Informe Administrativo (remitido a otra instancia)", fecha: null, estado: "pendiente" },
+    ]);
+  }
+
+  if (nota.archivo_leve_generada_at) {
+    // Cerrado sin pasar por Sanción -- sin esta rama, "Orden de Sanción" y
+    // "Cierre" quedaban en "Pendiente" para siempre en un caso ya resuelto.
+    return render([
+      { titulo: "Hecho registrado", fecha: nota.created_at, estado: "completo" },
+      ...continuan,
+      { titulo: "Reincorporación", fecha: nota.fecha_reincorporacion, estado: nota.fecha_reincorporacion ? "completo" : "pendiente" },
+      { titulo: "Imputación / notificación", fecha: nota.imputacion_generada_at, estado: "completo" },
+      { titulo: "Descargo", fecha: nota.fecha_descargo, estado: "completo" },
+      { titulo: "Archivado sin sanción", fecha: nota.archivo_leve_generada_at, estado: "completo" },
+    ]);
+  }
+
+  const exp = (nota.expedientes && nota.expedientes[0]) || null;
+  const vencidoDescargo = !!nota.imputacion_generada_at && !nota.fecha_descargo && plazoDescargoVencido(nota);
+  const hayEvaluacion = !!(nota.sancion_analisis && String(nota.sancion_analisis).trim()) || !!nota.orden_sancion_generada_at;
+  const listoDescargo = nota.fecha_descargo || vencidoDescargo;
+  const cerrado = !!(nota.orden_notificada_at || (exp && (exp.numero_oficio || exp.numero_ht)));
+
+  const nd = "nd";
+  return render([
+    { titulo: "Hecho registrado", fecha: nota.created_at, estado: "completo" },
+    ...continuan,
+    { titulo: "Reincorporación", fecha: nota.fecha_reincorporacion, estado: nota.fecha_reincorporacion ? "completo" : "pendiente" },
+    { titulo: "Imputación / notificación", fecha: nota.imputacion_generada_at, estado: nota.imputacion_generada_at ? "completo" : (nota.fecha_reincorporacion ? "pendiente" : nd) },
+    { titulo: "Descargo", fecha: nota.fecha_descargo, estado: nota.fecha_descargo ? "completo" : (!nota.imputacion_generada_at ? nd : (vencidoDescargo ? "vencido" : "pendiente")) },
+    { titulo: "Evaluación del descargo", fecha: null, estado: !listoDescargo ? nd : (hayEvaluacion ? "completo" : "pendiente") },
+    { titulo: "Orden de Sanción", fecha: nota.orden_sancion_generada_at, estado: nota.orden_sancion_generada_at ? "completo" : (listoDescargo ? "pendiente" : nd) },
+    { titulo: "Cierre (notificación / expediente)", fecha: nota.orden_notificada_at, estado: cerrado ? "completo" : (nota.orden_sancion_generada_at ? "pendiente" : nd) },
+  ]);
+}
+
+function colorTema(varName) {
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
+const MESES_CORTO_PANEL = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+function etiquetaMesPanel(ym) {
+  if (ym === PERIODO_ACUMULADO) return `Acumulado desde ${etiquetaMesPanel(INICIO_INFORME.slice(0, 7))}`;
+  const [y, m] = ym.split("-");
+  const nombre = MESES_CORTO_PANEL[Number(m) - 1] || m;
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${y}`;
+}
+
+function mesesConDatos(notas) {
+  const set = new Set();
+  notas.forEach((n) => { if (n.fecha_falta) set.add(n.fecha_falta.slice(0, 7)); });
+  return [...set].sort().reverse();
+}
+
+// Resumen mensual: por código de infracción, y quién es reiterativo (más de 3
+// faltas en el mes). La tabla de reiterativos es SIN nombre -- solo grado y el
+// detalle de códigos -- pensada para poder compartirse sin exponer identidades;
+// la lista que se abre al tocar un recuadro sí trae nombres (ver abajo).
+function calcularResumenMensual(ym) {
+  const { total, efectivos } = resumenDelMes(state.notas, ym, undefined, INICIO_INFORME);
+  const codigoDe = (n) => (n.codigo_infraccion || "").trim() || "Sin código";
+  const codigoCounts = {};
+  efectivos.forEach((e) => e.notas.forEach((n) => {
+    const c = codigoDe(n);
+    codigoCounts[c] = (codigoCounts[c] || 0) + 1;
+  }));
+  const masDe3 = efectivos
+    .filter((e) => e.faltas > 3)
+    .map((e) => {
+      const conteo = {};
+      e.notas.forEach((n) => { const c = codigoDe(n); conteo[c] = (conteo[c] || 0) + 1; });
+      return { grado: e.grado, faltas: e.faltas, conteo };
+    });
+  const horasTotales = efectivos.reduce((s, e) => s + e.horasTotales, 0);
+  return {
+    total,
+    efectivos,
+    horasTotales,
+    duracionTotal: formatearDuracionHoras(horasTotales),
+    efectivosDistintos: efectivos.length,
+    reiterativos: efectivos.filter((e) => e.faltas > 1).length,
+    codigoCounts,
+    masDe3,
+  };
+}
+
+// Cada recuadro del resumen abre la lista de efectivos que le corresponde.
+const LISTAS_RESUMEN = {
+  // La sumatoria: todos los efectivos, de quien más tiempo acumula a quien menos.
+  tiempo: { filtro: () => true, orden: (a, b) => b.horasTotales - a.horasTotales, titulo: (n, r, mes) => `Tiempo ausente acumulado por ${n} ${n === 1 ? "efectivo" : "efectivos"} en ${mes}` },
+  faltas: { filtro: () => true, titulo: (n, r, mes) => `Las ${r.total} faltas, por efectivo (${n}), en ${mes}` },
+  efectivos: { filtro: () => true, titulo: (n, r, mes) => `${n} ${n === 1 ? "efectivo faltó" : "efectivos faltaron"} en ${mes}` },
+  reiterativos: { filtro: (e) => e.faltas > 1, titulo: (n, r, mes) => `${n} ${n === 1 ? "reiterativo" : "reiterativos"} (2 o más faltas) en ${mes}` },
+  masDe3: { filtro: (e) => e.faltas > 3, titulo: (n, r, mes) => `${n} con más de 3 faltas en ${mes}` },
+};
+let listaResumenActiva = null;
+let efectivosListaResumen = [];
+
+const diaMesCorto = (f) => { const [, m, d] = String(f).split("-"); return `${d}/${m}`; };
+
+function pintarListaResumen(r, ym) {
+  const def = LISTAS_RESUMEN[listaResumenActiva];
+  $("resumenLista").classList.toggle("hidden", !def);
+  if (!def) return;
+  const filas = r.efectivos.filter(def.filtro);
+  if (def.orden) filas.sort(def.orden);
+  efectivosListaResumen = filas;
+  const periodo = ym === PERIODO_ACUMULADO ? `el ${etiquetaMesPanel(ym).replace(/^Acumulado/, "acumulado")}` : etiquetaMesPanel(ym);
+  // El informe a DIRREHUM rige desde INICIO_INFORME: antes de eso no hay descuento.
+  const etiquetaInicio = etiquetaMesPanel(INICIO_INFORME.slice(0, 7));
+  const aplicaDescuento = ym === PERIODO_ACUMULADO || ym >= INICIO_INFORME.slice(0, 7);
+  $("resumenListaTitulo").textContent = def.titulo(filas.length, r, periodo);
+  const faltas = filas.reduce((s, e) => s + e.faltas, 0);
+  const horas = filas.reduce((s, e) => s + e.horasTotales, 0);
+  const descuentos = filas.map((e) => descuentoDeNotas(e.notas));
+  const totalDescuento = {
+    monto: descuentos.reduce((s, d) => s + d.monto, 0),
+    dias: descuentos.reduce((s, d) => s + d.dias, 0),
+    diasSinMonto: descuentos.reduce((s, d) => s + d.diasSinMonto, 0),
+  };
+  const gradosSinMonto = [...new Set(descuentos.flatMap((d) => d.gradosSinMonto))];
+  const cumplen = descuentos.filter(cumpleMinimo).length;
+  const descuentoTxt = aplicaDescuento
+    ? ` · descuento aprox. a requerir ${textoDescuento(totalDescuento)} por ${textoDias(totalDescuento.dias)} faltados (${cumplen} ${cumplen === 1 ? "efectivo llega" : "efectivos llegan"} a ${textoDias(DIAS_MINIMOS)} o más)`
+      + (gradosSinMonto.length ? ` (sin monto de sueldo cargado para: ${gradosSinMonto.join(", ")})` : "")
+    : ` · sin descuento: el informe a DIRREHUM rige desde ${etiquetaInicio}`;
+  $("resumenListaSubtitulo").textContent = filas.length
+    ? `${faltas} ${faltas === 1 ? "falta" : "faltas"} · ${formatearDuracionHoras(horas)} de ausencia sumada${descuentoTxt}. Toque un nombre para abrir su ficha. Esta lista lleva nombres; la tabla de reiterativos de abajo sigue siendo anónima.`
+    : "";
+  const remuneraciones = Object.entries(REMUNERACION).map(([g, m]) => `${g} ${formatearSoles(m)}`).join(" · ");
+  $("resumenListaNota").textContent = `Descuento aprox. = remuneración del grado ÷ 30 × días faltados (sin la bonificación por riesgo de vida). Un día faltado se completa cada 24:00 h de ausencia acumulada en el período elegido; lo que sobra no cuenta hasta completar otro día (47:00 h = 1 día y sobran 23:00 h). Solo se muestra a quien ya completó ${textoDias(DIAS_MINIMOS)} (24:00 h). Aquí el tiempo va en días y horas, sin minutos; los días y minutos exactos se cuentan en el informe. El informe rige desde ${etiquetaInicio}. Remuneraciones usadas: ${remuneraciones}; los demás grados quedan ${INDETERMINADO} hasta cargar su monto. La app no descuenta: el monto es el que se requiere a DIRREHUM, que paga por días efectivamente laborados. Los casos sin reincorporar cuentan hasta hoy y pueden cambiar. La suma de tiempo sirve solo para solicitar el descuento: no cambia la infracción, cada falta conserva su propio código (dos faltas de 23:30 h siguen siendo dos L21, no una G39).`;
+  $("resumenListaEmpty").classList.toggle("hidden", filas.length > 0);
+  $("resumenListaEmpty").textContent = "Nadie en este grupo este mes.";
+  $("resumenListaBody").innerHTML = filas.map((e, i) => {
+    const fechas = e.fechas.map((f) => `<span class="pill pill-neutral">${escapeHtml(diaMesCorto(f))}</span>`).join("");
+    const codigos = Object.entries(e.porCodigo).sort((a, b) => b[1] - a[1])
+      .map(([c, k]) => `<span class="pill pill-yes">${escapeHtml(c)}${k > 1 ? ` ×${k}` : ""}</span>`).join("");
+    const aprox = e.aproximado ? ` <span class="muted" title="Aproximado: a algún caso le falta la hora">≈</span>` : "";
+    const enCurso = e.enCurso ? ` <span class="pill pill-warning" title="Todavía sin reincorporar: cuenta hasta hoy">en curso</span>` : "";
+    const d = descuentos[i];
+    const pista = `Sin monto de sueldo cargado para el grado ${escapeHtml(d.gradosSinMonto.join(", "))}`;
+    const sobran = d.minutosSobrantes >= 60 ? ` · sobran ${formatearDuracionHoras(d.minutosSobrantes / 60)}` : "";
+    const provisional = e.enCurso ? " · provisional" : "";
+    // Solo lleva monto quien ya completó el mínimo de días; a los demás no se les
+    // pone un importe para que no haya equivocación.
+    const montoTxt = !aplicaDescuento
+      ? `<span class="muted" title="El informe a DIRREHUM rige desde ${escapeHtml(etiquetaInicio)}">—</span>`
+      : !cumpleMinimo(d)
+        ? `<span class="muted" title="Todavía no completa ${textoDias(DIAS_MINIMOS)}">—</span><div class="muted small">aún no completa ${textoDias(DIAS_MINIMOS)}${sobran}${provisional}</div>`
+        : (d.diasSinMonto >= d.dias
+          ? `<span class="pill pill-warning" title="${pista}">${INDETERMINADO}</span>`
+          : `<strong>${escapeHtml(formatearSoles(d.monto))}</strong>`
+            + (d.diasSinMonto ? ` <span class="pill pill-warning" title="${pista}: ${d.diasSinMonto} día(s) no están sumados">+ ${INDETERMINADO}</span>` : ""))
+          + `<div class="muted small">${textoDias(d.dias)}${sobran}${provisional}</div>`;
+    return `<tr>
+      <td class="case-title"><button type="button" class="link-btn" data-i="${i}" title="Abrir su ficha completa">${escapeHtml(nombreInvestigadoVisible(e, true))}</button></td>
+      <td>${e.faltas}</td>
+      <td><div class="codes-cell">${fechas}</div></td>
+      <td>${escapeHtml(formatearDuracionHoras(e.horasTotales))}${aprox}${enCurso}</td>
+      <td class="monto">${montoTxt}</td>
+      <td><div class="codes-cell">${codigos}</div></td>
+    </tr>`;
+  }).join("");
+}
+
+function renderResumenMensual(ym) {
+  if (!ym) return;
+  const r = calcularResumenMensual(ym);
+  const tile = (clave, valor, etiqueta) => {
+    const activo = listaResumenActiva === clave;
+    return `<button type="button" class="stat-tile stat-tile-btn${activo ? " activo" : ""}" data-lista="${clave}" aria-pressed="${activo}"><div class="stat-value">${valor}</div><div class="stat-label">${etiqueta}</div></button>`;
+  };
+  $("resumenMensualStats").innerHTML =
+    tile("faltas", r.total, "Faltas registradas") +
+    tile("efectivos", r.efectivosDistintos, "Efectivos distintos") +
+    tile("tiempo", r.duracionTotal, "Ausencia acumulada") +
+    tile("reiterativos", r.reiterativos, "Reiterativos (2+)") +
+    tile("masDe3", r.masDe3.length, "Con más de 3 faltas");
+  pintarListaResumen(r, ym);
+  const acumulado = ym === PERIODO_ACUMULADO;
+  const desdeTxt = `acumulado desde ${etiquetaMesPanel(INICIO_INFORME.slice(0, 7))}`;
+  $("resumenPeriodoTxt").textContent = acumulado ? `en el ${desdeTxt}` : "en el mes";
+  $("resumenReiterativosEmpty").textContent = acumulado ? `Nadie superó las 3 faltas en el ${desdeTxt}.` : "Nadie superó las 3 faltas este mes.";
+  const codigosOrdenados = Object.entries(r.codigoCounts).sort((a, b) => b[1] - a[1]);
+  $("resumenCodigoBody").innerHTML = codigosOrdenados.length
+    ? codigosOrdenados.map(([c, n]) => `<tr><td><span class="pill pill-yes">${escapeHtml(c)}</span></td><td>${n}</td></tr>`).join("") +
+      `<tr class="total"><td>Total</td><td>${r.total}</td></tr>`
+    : `<tr><td colspan="2" class="muted small">Sin faltas registradas este mes.</td></tr>`;
+
+  $("resumenReiterativosEmpty").classList.toggle("hidden", r.masDe3.length > 0);
+  $("resumenReiterativosBody").innerHTML = r.masDe3.map((p, i) => `
+    <tr>
+      <td class="case-title">Reiterativo N.° ${i + 1}</td>
+      <td><span class="badge">${escapeHtml(p.grado || "-")}</span></td>
+      <td>${p.faltas}</td>
+      <td><div class="codes-cell">${Object.entries(p.conteo).map(([c, n]) => `<span class="pill pill-yes">${escapeHtml(c)} ×${n}</span>`).join("")}</div></td>
+    </tr>`).join("");
+}
+
+function inicializarResumenMensual(notas) {
+  const meses = mesesConDatos(notas);
+  const sel = $("resumenMesSelect");
+  if (!meses.length) { sel.innerHTML = ""; return; }
+  const previo = sel.value;
+  sel.innerHTML = [PERIODO_ACUMULADO, ...meses].map((m) => `<option value="${m}">${etiquetaMesPanel(m)}</option>`).join("");
+  sel.value = [PERIODO_ACUMULADO, ...meses].includes(previo) ? previo : meses[0];
+  renderResumenMensual(sel.value);
+}
+$("resumenMesSelect")?.addEventListener("change", (e) => renderResumenMensual(e.target.value));
+// Tocar un recuadro abre su lista; tocarlo otra vez (o la ✕) la cierra. Al
+// cambiar de mes la lista abierta se queda y se vuelve a calcular.
+$("resumenMensualStats")?.addEventListener("click", (e) => {
+  const clave = e.target.closest("[data-lista]")?.dataset.lista;
+  if (!clave) return;
+  listaResumenActiva = listaResumenActiva === clave ? null : clave;
+  renderResumenMensual($("resumenMesSelect").value);
+  if (listaResumenActiva) $("resumenLista").scrollIntoView({ block: "nearest", behavior: "smooth" });
+});
+$("btnCerrarResumenLista")?.addEventListener("click", () => {
+  listaResumenActiva = null;
+  renderResumenMensual($("resumenMesSelect").value);
+});
+$("resumenListaBody")?.addEventListener("click", (e) => {
+  const efectivo = efectivosListaResumen[Number(e.target.closest("button[data-i]")?.dataset.i)];
+  if (!efectivo) return;
+  // La ficha muestra TODOS los expedientes de la persona, no solo los del mes.
+  const persona = personasDeLaLista().find((g) => mismoEfectivo(g.notas[0], efectivo.notas[0]));
+  if (!persona) return;
+  showView("view-seguimiento");
+  seleccionarPersona(persona);
+});
+
+// Chart.js solo se descarga la primera vez que se abre el Panel (no en cada
+// carga de la app). Se cachea la promesa para no repetir la descarga.
+let _chartMod = null;
+function cargarChart() {
+  if (!_chartMod) _chartMod = import("https://esm.sh/chart.js@4.4.4/auto").then((m) => m.Chart || m.default);
+  return _chartMod;
+}
+
+async function renderPanel() {
+  const notas = state.notas;
+  $("panelEmpty").classList.toggle("hidden", notas.length > 0);
+  $("panelContenido").classList.toggle("hidden", notas.length === 0);
+  Object.values(chartsPanel).forEach((c) => c.destroy());
+  chartsPanel = {};
+  if (!notas.length) return;
+  inicializarResumenMensual(notas);
+  let Chart;
+  try {
+    Chart = await cargarChart();
+  } catch (err) {
+    console.error(err); toast("No se pudieron cargar los gráficos. Revise la conexión."); return;
+  }
+
+  const text = colorTema("--text");
+  const textMuted = colorTema("--text-muted");
+  const border = colorTema("--border");
+  const accent = colorTema("--accent");
+  const accentSoft = colorTema("--accent-soft");
+
+  const pendientesVencidos = notas.filter((n) =>
+    n.fecha_reincorporacion && n.imputacion_generada_at && !n.fecha_descargo && !n.orden_sancion_generada_at && plazoDescargoVencido(n)
+  ).length;
+  const sancionados = notas.filter((n) => n.orden_sancion_generada_at).length;
+  $("panelStats").innerHTML = `
+    <div class="stat-tile"><div class="stat-value">${notas.length}</div><div class="stat-label">Casos totales</div></div>
+    <div class="stat-tile"><div class="stat-value">${pendientesVencidos}</div><div class="stat-label">Plazo vencido sin resolver</div></div>
+    <div class="stat-tile"><div class="stat-value">${sancionados}</div><div class="stat-label">Con sanción generada</div></div>
+  `;
+
+  const estadoCounts = {};
+  notas.forEach((n) => { const e = estadoDeNota(n); estadoCounts[e] = (estadoCounts[e] || 0) + 1; });
+  const paletaEstado = ["#1f9d55", "#d99a2b", "#4a90d9", "#8a6fd6", "#e5484d", "#5b6b78"];
+
+  const codigoCounts = {};
+  notas.forEach((n) => { const c = (n.codigo_infraccion || "").trim() || "Sin código"; codigoCounts[c] = (codigoCounts[c] || 0) + 1; });
+  const codigosOrdenados = Object.entries(codigoCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+  const mesesCounts = {};
+  notas.forEach((n) => {
+    if (!n.fecha_falta) return;
+    const mes = n.fecha_falta.slice(0, 7);
+    mesesCounts[mes] = (mesesCounts[mes] || 0) + 1;
+  });
+  const mesesOrdenados = Object.keys(mesesCounts).sort();
+  const mesesLabels = mesesOrdenados.map((m) => {
+    const [y, mm] = m.split("-");
+    return `${MESES_CORTO_PANEL[Number(mm) - 1]} ${y}`;
+  });
+
+  chartsPanel.estado = new Chart($("chartEstado"), {
+    type: "doughnut",
+    data: {
+      labels: Object.keys(estadoCounts),
+      datasets: [{ data: Object.values(estadoCounts), backgroundColor: paletaEstado, borderColor: border, borderWidth: 2 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom", labels: { color: text, boxWidth: 12, padding: 10, font: { size: 11 } } } },
+    },
+  });
+
+  chartsPanel.codigo = new Chart($("chartCodigo"), {
+    type: "bar",
+    data: {
+      labels: codigosOrdenados.map((e) => e[0]),
+      datasets: [{ data: codigosOrdenados.map((e) => e[1]), backgroundColor: accent, borderRadius: 4 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textMuted, precision: 0 }, grid: { color: border } },
+        y: { ticks: { color: text }, grid: { display: false } },
+      },
+    },
+  });
+
+  chartsPanel.tendencia = new Chart($("chartTendencia"), {
+    type: "line",
+    data: {
+      labels: mesesLabels,
+      datasets: [{
+        data: mesesOrdenados.map((m) => mesesCounts[m]),
+        borderColor: accent, backgroundColor: accentSoft,
+        fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: accent,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textMuted }, grid: { display: false } },
+        y: { ticks: { color: textMuted, precision: 0 }, grid: { color: border }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+// ---------- Historial de actividad ----------
+async function loadHistorial() {
+  const { data, error } = await supabase
+    .from("audit_log")
+    .select("*")
+    .order("changed_at", { ascending: false })
+    .limit(200);
+  if (error) { console.error(error); return; }
+  renderHistorialTable(data || []);
+}
+
+// Para UPDATE, arma una lista legible de "campo: antes → después" comparando
+// el jsonb guardado por el trigger; para INSERT/DELETE no hay comparación
+// posible (solo existe un lado), así que se muestra un texto fijo.
+function diffResumenHistorial(entry) {
+  if (entry.action === "INSERT") return "Registro creado.";
+  if (entry.action === "DELETE") return "Registro eliminado.";
+  const anterior = entry.old_data || {};
+  const nuevo = entry.new_data || {};
+  const campos = new Set([...Object.keys(anterior), ...Object.keys(nuevo)]);
+  const cambios = [];
+  campos.forEach((c) => {
+    if (c === "updated_at" || c === "created_at") return;
+    const a = anterior[c];
+    const b = nuevo[c];
+    if (JSON.stringify(a) !== JSON.stringify(b)) {
+      cambios.push(`${escapeHtml(c)}: ${escapeHtml(String(a ?? "-"))} → ${escapeHtml(String(b ?? "-"))}`);
+    }
+  });
+  return cambios.length ? cambios.join(" · ") : "Sin cambios en los campos.";
+}
+
+function renderHistorialTable(entries) {
+  const tbody = $("historialTableBody");
+  tbody.innerHTML = "";
+  $("historialEmpty").classList.toggle("hidden", entries.length > 0);
+  for (const e of entries) {
+    const tr = document.createElement("tr");
+    const pillClase = e.action === "INSERT" ? "pill-yes" : e.action === "DELETE" ? "pill-no" : "pill-inactive";
+    const fecha = fechaLima(e.changed_at);
+    const hora = horaLima(e.changed_at);
+    tr.innerHTML = `
+      <td>${formatFechaHora(fecha, hora)}</td>
+      <td>${escapeHtml(e.changed_by_email || "-")}</td>
+      <td>${escapeHtml(e.table_name)}</td>
+      <td><span class="pill ${pillClase}">${escapeHtml(e.action)}</span></td>
+      <td class="small">${diffResumenHistorial(e)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+// ---------- Utils ----------
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+function formatDate(d) {
+  if (!d) return "-";
+  const [y, m, day] = d.split("-");
+  return `${day}/${m}/${y}`;
+}
+function formatFechaHora(fecha, hora) {
+  const f = formatDate(fecha);
+  if (f === "-") return "-";
+  return hora ? `${f} ${hora.slice(0, 5)}` : f;
+}
+// Revisor de consistencia L21/L24 (determinístico, no por IA: es una simple
+// comparación aritmética entre las horas ausente ya calculadas y el código
+// guardado — más confiable pidiéndole a un LLM que verifique una resta).
+// Devuelve null si no hay nada que advertir (falta algún dato, o el código
+// coincide con lo esperado), o { sugerido, actual, horas } si no coinciden —
+// típicamente porque el código se completó a mano o vino de un PDF/OCR con
+// una fecha/hora mal leída.
+function verificarConsistenciaCodigo(nota) {
+  const horas = horasAusente(nota);
+  if (horas == null || !nota.codigo_infraccion) return null;
+  const sugerido = sugerirCodigoInfraccion(horas);
+  const actual = nota.codigo_infraccion.trim().toUpperCase();
+  if (!sugerido || sugerido === actual) return null;
+  return { sugerido, actual, horas };
+}
+
+function formatearHorasFalto(nota) {
+  const totalHoras = horasAusente(nota);
+  if (totalHoras == null) return null;
+  const totalMin = Math.round(totalHoras * 60);
+  const dias = Math.floor(totalMin / 1440);
+  const horas = Math.floor((totalMin % 1440) / 60);
+  const min = totalMin % 60;
+  const partes = [];
+  if (dias) partes.push(`${dias}d`);
+  partes.push(`${horas}h`);
+  partes.push(`${min}m`);
+  return partes.join(" ");
+}
