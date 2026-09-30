@@ -78,8 +78,73 @@ Detalle práctico: varias páginas venían escaneadas de lado. El escáner de la
 aplicación endereza solo, pero conviene escanear derecho para que la lectura
 no dependa de eso.
 
-Falta ver en documento real: una orden de sanción con días impuestos (solo se ha
-visto amonestación) y un expediente terminado en archivo.
+Falta ver en documento real un expediente terminado en **archivo**: es el único
+camino que todavía no se ha podido comprobar contra un documento de verdad.
+
+## Qué datos hay que leer de cada expediente
+
+Analizados los tres modelos reales, estos son los datos y para qué sirve cada uno.
+La diferencia importante es entre **llave** (sirve para encontrar el caso) y
+**contenido** (se guarda o se comprueba, pero no identifica nada).
+
+### Llaves, en el orden en que se confía en ellas
+
+| Dato | Dónde está | Por qué se confía |
+|---|---|---|
+| **N.º de Nota Informativa de la falta** (12 dígitos) | Descripción del hecho, en la imputación y otra vez en la orden | Identifica **el caso**, no a la persona. Es la única llave que distingue dos faltas del mismo efectivo |
+| **CIP del investigado** (6-8 dígitos) | Impreso en la decisión de la orden («CIP N° 31447206») y en el acta | Identifica **al efectivo** sin ambigüedad: `efectivos.cip` es único |
+| **Código de infracción** (L-24) | Descripción de la infracción y en la decisión | No identifica solo; sirve para desempatar cuando el efectivo tiene varios casos |
+| **Fecha del documento** | Al pie: «Ventanilla, 21 de agosto del 2026» | Desempate final y aviso si el expediente es de otro periodo que el caso |
+| Apellidos y nombres | En todas las páginas | **El más débil.** Ver abajo |
+
+El cruce va en ese orden y, si tras afinar por código queda más de un caso posible,
+**no elige**: lo manda a revisión. Archivar el expediente firmado en el caso
+equivocado es un error que no se descubre hasta mucho después.
+
+### Contenido que se guarda o se comprueba
+
+| Dato | Para qué |
+|---|---|
+| **Días impuestos y tipo** (8, Sanción Simple) | Es el resultado; va a `dias_sancion` |
+| **Grado y nombre del investigado** | Se muestra en la revisión para que se vea a quién se le está archivando |
+| **Superior que sanciona** | No es llave. Sirve para comprobar que el expediente es el que la web generó y para dejar constancia de quién firmó |
+| **DNI del investigado** | Comprobación cruzada cuando el CIP se lee mal |
+| **N.º de oficio y de Hoja de Trámite** | Referencias, cuando el fajo viene por mesa de partes |
+| **Piezas presentes** | Para avisar si falta la notificación firmada, el acta o la orden |
+
+### Los tres tropiezos de los modelos reales
+
+1. **Los días se pueden leer mal, y es el error más caro.** Un mismo expediente
+   trae tres cifras de días: el **rango** del Anexo I («De 8 a 10 días de Sanción
+   Simple»), que aparece dos veces —en la imputación y dentro de la propia orden—;
+   el **plazo para impugnar** («tres (3) días hábiles»); y la **decisión**, que es
+   la única válida («con ocho (08) días de Sanción Simple»). Leer el rango en vez
+   de la decisión registra 10 días donde se impusieron 8. Por eso solo se acepta
+   lo que sigue a «SANCIONAR al», o el campo «SANCIÓN IMPUESTA» de la orden
+   antigua; sin ninguno de los dos, se declara no resuelto en vez de adivinar.
+
+2. **El orden del nombre cambia dentro del mismo expediente.** En un caso real la
+   imputación decía «S3 PNP AYTHON JHON, Rodriguez Peramas» y el acta y la orden,
+   del mismo efectivo, «S3 PNP Rodriguez Peramas AYTHON JHON». Por eso el nombre
+   no puede ser la llave principal y la comparación es por palabras sueltas, sin
+   depender del orden. Es la razón de peso para usar el CIP.
+
+3. **No todo expediente trae Hoja de Trámite.** El fajo de mesa de partes sí, pero
+   el expediente suelto empieza directamente por el inicio de imputación. El corte
+   admite las dos aperturas, y descarta expresamente la hoja de «Notificación y
+   entrega de acto administrativo», que menciona «1.- Inicio de imputación» solo
+   porque es una de sus diecisiete casillas.
+
+Detalle menor pero real: las páginas llegan desordenadas. En un modelo la segunda
+hoja de la orden venía antes que la primera. La lectura trabaja sobre el bloque
+entero, no página por página, así que no le afecta.
+
+### Qué queda para la IA
+
+Las reglas de arriba no necesitan IA. La IA entra solo cuando el reconocimiento
+óptico devuelve texto sucio y alguna llave no se deja leer: se le pasa el texto
+del bloque y se le pide **únicamente** número de nota, CIP, código y días. Nunca
+decide a qué caso pertenece; eso lo hace el cruce, y lo confirma una persona.
 
 ## Riesgo a tener presente
 
