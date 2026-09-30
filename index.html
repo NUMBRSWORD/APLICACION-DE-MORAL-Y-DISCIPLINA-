@@ -708,6 +708,40 @@
   </div>
 </div>
 
+<!-- MODAL OFICIO DE REMISION -->
+<div id="modalOficio" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Oficio de remisión</h3>
+      <button id="btnCerrarModalOficio" class="btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="ofCaso" class="muted small"></p>
+      <label>N.º de oficio
+        <input type="text" id="ofNumero" placeholder="412-2026" />
+      </label>
+      <p class="muted small">Solo el correlativo y el año. El resto del código lo pone la plantilla.</p>
+      <div class="grid-2">
+        <label>Grado del jefe de la DIVOPUS<input type="text" id="ofJefeGrado" placeholder="CORONEL PNP" /></label>
+        <label>Nombre del jefe de la DIVOPUS<input type="text" id="ofJefeNombre" placeholder="Nombres APELLIDOS" /></label>
+      </div>
+      <label>Cargo<input type="text" id="ofJefeCargo" /></label>
+      <p id="ofJefeDesde" class="muted small"></p>
+      <div class="grid-2">
+        <label>Grado del comisario que firma<input type="text" id="ofComisarioGrado" placeholder="CAPITAN" /></label>
+        <label>Nombre del comisario que firma<input type="text" id="ofComisarioNombre" placeholder="Nombres APELLIDOS" /></label>
+      </div>
+      <p class="muted small">Confírmelo cada vez: de aquí salen las iniciales de la firma.</p>
+      <p id="ofResumen" class="muted small"></p>
+      <p id="ofError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarOficio" class="btn-ghost">Cancelar</button>
+        <button type="button" id="btnGenerarOficio" class="btn-primary">Generar el oficio</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL NUEVO EFECTIVO -->
 <div id="modalNuevoEfectivo" class="modal-overlay hidden">
   <div class="modal">

@@ -21,6 +21,8 @@ import { DIAS_MINIMOS, INDETERMINADO, INICIO_INFORME, REMUNERACION, cumpleMinimo
 import { esClaveInicial, validarClaveNueva } from "./lib/acceso.js";
 import { prepararLote, revisarFila, filasGuardables, resumenDelLote, filaARegistroDeExpediente, necesitaAyudaDeIA, aplicarLecturaDeIA, marcarRepetidos } from "./lib/loteExpedientes.js";
 import { estadoDeRemision, esperaOficio, esperaHojaDeTramite } from "./lib/remision.js";
+import { datosDelOficio, documentosRemitidos, faltaParaElOficio, renderizarOficioRemisionDocx } from "./lib/oficioRemision.js";
+import { piezasDelExpediente } from "./lib/expedienteFirmado.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.6.82/build/pdf.worker.mjs";
 
@@ -2187,6 +2189,13 @@ async function renderNotaDetail(nota) {
     ${isAdmin ? `
     <div class="detail-card">
       <h3>Expediente</h3>
+      ${esperaOficio(nota, state.remisiones || []) ? `
+        <p class="muted small">El expediente firmado ya está archivado. Falta el oficio con el que se remite.</p>
+        <button type="button" class="btn-primary" id="btnGenerarOficioCaso">Generar el oficio de remisión</button>
+      ` : ""}
+      ${esperaHojaDeTramite(nota, state.remisiones || []) ? `
+        <p class="muted small">El oficio ya está adjunto. Falta la Hoja de Trámite que DIVOPUS devuelve recepcionada; se adjunta en Recepción.</p>
+      ` : ""}
       ${exp ? `
         <div class="detail-grid">
           <div class="detail-field"><div class="label">N.º de oficio</div><div class="value">${escapeHtml(exp.numero_oficio || "-")}</div></div>
@@ -2265,6 +2274,7 @@ async function renderNotaDetail(nota) {
   $("btnRedactarIA")?.addEventListener("click", () => redactarConIA(nota));
   $("btnVerificarNotifIA")?.addEventListener("click", () => verificarNotificacionOrdenIA(nota));
   $("ordenNotifForm")?.addEventListener("submit", (e) => submitNotificacionOrden(e, nota));
+  $("btnGenerarOficioCaso")?.addEventListener("click", () => abrirOficio(nota));
 
   // Si no hubo descargo, al elegir el tercio se rellena el "Análisis y
   // Evaluación" con el párrafo estándar (venció el plazo...) cerrando según
@@ -5946,3 +5956,153 @@ $("btnGuardarExpLote")?.addEventListener("click", async (e) => {
     ocuparBoton(btn, false);
   }
 });
+
+// ---------------------------------------------------------------------------
+// OFICIO DE REMISIÓN
+//
+// Se hace después de tener el expediente firmado en mano. Casi todo sale de lo
+// ya registrado; solo dos cosas se confirman a mano: el jefe de la DIVOPUS, que
+// cambia cada tanto, y el comisario que firma, que se confirma cada vez.
+// Ambos quedan recordados en este equipo para no reescribirlos, y la pantalla
+// dice desde cuándo, que es lo que permite darse cuenta de que ya cambiaron.
+// ---------------------------------------------------------------------------
+
+const MEMORIA_OFICIO = "faltos.oficio.firmas";
+let notaDelOficio = null;
+
+function recordadoDelOficio() {
+  try { return JSON.parse(localStorage.getItem(MEMORIA_OFICIO) || "{}"); } catch { return {}; }
+}
+function recordarDelOficio(datos) {
+  try { localStorage.setItem(MEMORIA_OFICIO, JSON.stringify({ ...datos, confirmado: hoyLima() })); } catch { /* sin memoria, se escribe cada vez */ }
+}
+
+/** El oficial que constató la falta y firmó la orden: quien impuso la sanción. */
+function oficialQueSanciono(nota) {
+  const oficial = buscarOficialConstato(nota?.oficial_constato, state.efectivos || []);
+  if (!oficial) return {};
+  return { grado: (oficial.grado || "").trim(), nombre: limpiarNombreVisible(oficial.apellidos_nombres || "") };
+}
+
+/** Nombre con el que firma quien está usando la aplicación, para las iniciales. */
+function quienRedacta() {
+  const yo = (state.efectivos || []).find((e) => String(e.cip || "") === String(state.cip || ""));
+  return yo?.apellidos_nombres || state.email || "";
+}
+
+function abrirOficio(nota) {
+  notaDelOficio = nota;
+  const previo = recordadoDelOficio();
+  $("ofCaso").textContent = `Expediente de ${nombreInvestigadoVisible(nota, true)} · ${nota.codigo_infraccion || "sin código"}`;
+  $("ofNumero").value = "";
+  $("ofJefeGrado").value = previo.jefeGrado || "CORONEL PNP";
+  $("ofJefeNombre").value = previo.jefeNombre || "";
+  $("ofJefeCargo").value = previo.jefeCargo || "JEFE DE LA DIVOPUS 03 VENTANILLA";
+  $("ofComisarioGrado").value = previo.comisarioGrado || "";
+  $("ofComisarioNombre").value = previo.comisarioNombre || "";
+  $("ofJefeDesde").textContent = previo.confirmado
+    ? `Confirmado por última vez el ${formatDate(previo.confirmado)}. Si cambiaron, corríjalo aquí.`
+    : "Todavía no se ha confirmado ninguno: escríbalos y quedarán recordados.";
+  $("ofError").classList.add("hidden");
+  refrescarResumenOficio();
+  $("modalOficio").classList.remove("hidden");
+}
+
+function datosDelOficioEnPantalla() {
+  return datosDelOficio({
+    nota: notaDelOficio,
+    piezas: piezasDelExpediente(""),
+    jefe: {
+      grado: $("ofJefeGrado").value.trim(),
+      nombre: $("ofJefeNombre").value.trim(),
+      cargo: $("ofJefeCargo").value.trim(),
+    },
+    comisario: {
+      grado: $("ofComisarioGrado").value.trim(),
+      nombre: $("ofComisarioNombre").value.trim(),
+    },
+    // Quién impuso la sanción sale del propio caso: es el oficial que constató
+    // y firmó la orden, y puede no ser el comisario que firma este oficio.
+    sanciona: oficialQueSanciono(notaDelOficio),
+    numeroOficio: $("ofNumero").value.trim(),
+    fecha: hoyLima(),
+    redactadoPor: quienRedacta(),
+  });
+}
+
+function refrescarResumenOficio() {
+  if (!notaDelOficio) return;
+  const datos = datosDelOficioEnPantalla();
+  const falta = faltaParaElOficio(datos);
+  $("ofResumen").textContent = falta.length
+    ? `Falta ${falta.join(", ")}.`
+    : `Se remite: orden de sanción con ${datos.sancion}, ${datos.documentos}.`;
+  $("btnGenerarOficio").disabled = falta.length > 0;
+}
+
+["ofNumero", "ofJefeGrado", "ofJefeNombre", "ofJefeCargo", "ofComisarioGrado", "ofComisarioNombre"]
+  .forEach((id) => $(id)?.addEventListener("input", refrescarResumenOficio));
+
+$("btnCerrarModalOficio")?.addEventListener("click", cerrarOficio);
+$("btnCancelarOficio")?.addEventListener("click", cerrarOficio);
+function cerrarOficio() { $("modalOficio").classList.add("hidden"); notaDelOficio = null; }
+
+$("btnGenerarOficio")?.addEventListener("click", async (e) => {
+  if (!notaDelOficio) return;
+  const btn = e.currentTarget;
+  const errEl = $("ofError");
+  errEl.classList.add("hidden");
+  ocuparBoton(btn, true, "Generando...");
+  try {
+    // Las piezas se leen del legajo ya registrado, para anunciar lo que el
+    // expediente trae de verdad y no una lista fija.
+    const piezas = await piezasDelLegajoFirmado(notaDelOficio);
+    const datos = { ...datosDelOficioEnPantalla(), documentos: documentosRemitidos(piezas, notaDelOficio.codigo_infraccion) };
+    const blob = await renderizarOficioRemisionDocx(datos);
+    const nombreArchivo = nombreArchivoDocumento("OFICIO REMISION", notaDelOficio);
+    saveAs(blob, nombreArchivo);
+    registrarVersionDocumento(notaDelOficio.id, "oficio_remision", blob, nombreArchivo);
+    recordarDelOficio({
+      jefeGrado: $("ofJefeGrado").value.trim(),
+      jefeNombre: $("ofJefeNombre").value.trim(),
+      jefeCargo: $("ofJefeCargo").value.trim(),
+      comisarioGrado: $("ofComisarioGrado").value.trim(),
+      comisarioNombre: $("ofComisarioNombre").value.trim(),
+    });
+    cerrarOficio();
+    toast("Oficio generado. Adjúntelo en Recepción junto con la Hoja de Trámite cuando la reciba.");
+  } catch (err) {
+    console.error("No se pudo generar el oficio:", err);
+    errEl.textContent = "No se pudo generar el oficio: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+/**
+ * Qué piezas trae el legajo firmado que ya está subido. Se lee del propio PDF;
+ * si no se puede (sin red, archivo ilegible), se asume el caso corriente —acta
+ * de no descargo si no hay descargo registrado— porque el oficio se revisa
+ * antes de firmarse y es peor no poder generarlo.
+ */
+async function piezasDelLegajoFirmado(nota) {
+  const porDefecto = {
+    imputacion: true,
+    descargo: !!nota.fecha_descargo,
+    acta_no_descargo: !nota.fecha_descargo,
+    orden_sancion: true,
+    notificacion_firmada: true,
+  };
+  if (!nota.archivo_orden_notificacion_path) return porDefecto;
+  try {
+    const { data: blob, error } = await supabase.storage.from("notas").download(nota.archivo_orden_notificacion_path);
+    if (error || !blob) return porDefecto;
+    const texto = (await extraerTextoPorPagina(blob)).join("\n");
+    const leidas = piezasDelExpediente(texto);
+    return leidas.orden_sancion || leidas.archivo ? leidas : porDefecto;
+  } catch (err) {
+    console.error("No se pudo leer el legajo para saber qué documentos anuncia el oficio:", err);
+    return porDefecto;
+  }
+}
