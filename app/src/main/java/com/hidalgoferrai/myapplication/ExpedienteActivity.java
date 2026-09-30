@@ -28,6 +28,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ExpedienteActivity extends AppCompatActivity {
+    // Un fajo de expedientes firmados pasa de veinte hojas: el modelo real que
+    // se usó para ajustar la lectura traía veinticinco.
+    private static final int LIMITE_PAGINAS = 60;
     private final ExecutorService hilo = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Uri documento;
@@ -71,7 +74,7 @@ public class ExpedienteActivity extends AppCompatActivity {
         });
         findViewById(R.id.btnContinuarPdf).setOnClickListener(v -> {
             if (documento == null) return;
-            startActivity(new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_VISTA,"registro")
+            startActivity(new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_VISTA,"expedientes-lote")
                     .putExtra(WebActivity.EXTRA_DOCUMENTO,documento.toString())
                     .putExtra(WebActivity.EXTRA_NOMBRE_DOCUMENTO,nombre));
         });
@@ -90,7 +93,7 @@ public class ExpedienteActivity extends AppCompatActivity {
         findViewById(R.id.tvScannerEstado).setVisibility(View.VISIBLE);
         findViewById(R.id.btnEscanear).setEnabled(false);
         GmsDocumentScannerOptions opciones = new GmsDocumentScannerOptions.Builder()
-                .setGalleryImportAllowed(true).setPageLimit(20)
+                .setGalleryImportAllowed(true).setPageLimit(LIMITE_PAGINAS)
                 .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
                 .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL).build();
         handler.postDelayed(() -> {

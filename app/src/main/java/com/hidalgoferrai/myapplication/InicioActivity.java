@@ -77,8 +77,10 @@ public class InicioActivity extends AppCompatActivity {
         if (administrador) {
             agregar(grid, R.string.inicio_admin_panel, R.string.inicio_admin_panel_detalle,
                     R.drawable.ic_calendario, "panel");
+            // Abre el escaner, no el modulo de consulta: el administrador venia aqui
+            // a subir el expediente firmado y se encontraba la lista de todos.
             agregar(grid, R.string.inicio_subir_completo, R.string.inicio_subir_completo_detalle,
-                    R.drawable.ic_expediente, "consulta");
+                    R.drawable.ic_expediente, "escanear-expediente");
             agregar(grid, R.string.inicio_recepcionar, R.string.inicio_recepcionar_detalle,
                     R.drawable.ic_recepcion, "recepcion-fisica");
         } else {
@@ -200,6 +202,8 @@ public class InicioActivity extends AppCompatActivity {
         tarjeta.setOnClickListener(v -> {
             if ("pendientes".equals(vista)) {
                 startActivity(new Intent(this, SeguimientoActivity.class));
+            } else if ("escanear-expediente".equals(vista)) {
+                startActivity(new Intent(this, ExpedienteActivity.class));
             } else {
                 Intent i = new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_VISTA, vista);
                 startActivity(i);

@@ -116,7 +116,7 @@
     <string name="inicio_admin_panel">Panel de control</string>
     <string name="inicio_admin_panel_detalle">Resumen y pendientes del mes</string>
     <string name="inicio_subir_completo">Subir expediente completo</string>
-    <string name="inicio_subir_completo_detalle">Elija el caso y adjunte el PDF firmado</string>
+    <string name="inicio_subir_completo_detalle">Escanee los expedientes firmados: cada uno va a su caso</string>
     <string name="inicio_recepcionar">Recepcionar documentos</string>
     <string name="inicio_recepcionar_detalle">Verifique el físico antes de confirmar</string>
     <string name="inicio_usuario_pendientes">Pasos pendientes</string>

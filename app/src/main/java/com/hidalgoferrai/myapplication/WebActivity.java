@@ -156,11 +156,11 @@ public class WebActivity extends AppCompatActivity {
         epocaSesion = SesionActual.epoca();
         seccion = getIntent().getStringExtra(EXTRA_VISTA);
         if ("seguridad".equals(seccion)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        if (seccion != null && !seccion.matches("cumplimiento|seguimiento|efectivos|recepcion|detalle|registro|consulta|recepcion-fisica|panel|herramientas|roles|directivas|agenda|documentos|historial|reincorporacion|continuan|seguridad")) {
+        if (seccion != null && !seccion.matches("cumplimiento|seguimiento|efectivos|recepcion|detalle|registro|consulta|recepcion-fisica|panel|herramientas|roles|directivas|agenda|documentos|historial|reincorporacion|continuan|expedientes-lote|seguridad")) {
             finish(); return;
         }
         String uriDocumento = getIntent().getStringExtra(EXTRA_DOCUMENTO);
-        if (uriDocumento != null && "registro".equals(seccion)) {
+        if (uriDocumento != null && ("registro".equals(seccion) || "expedientes-lote".equals(seccion))) {
             Uri uri = Uri.parse(uriDocumento);
             if ("content".equals(uri.getScheme())) {
                 documento = uri;
@@ -432,6 +432,7 @@ public class WebActivity extends AppCompatActivity {
             case "recepcion-fisica": return R.string.recepcion_fisica;
             case "consulta": return R.string.consulta_expediente;
             case "registro": return R.string.modulo_registro;
+            case "expedientes-lote": return R.string.modulo_expedientes_lote;
             default: return R.string.modulo_detalle;
         }
     }

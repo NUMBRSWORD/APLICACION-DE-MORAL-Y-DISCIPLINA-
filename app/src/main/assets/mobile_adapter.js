@@ -169,7 +169,8 @@
   const batches={
     registro:{button:'btnFaltasLote',input:'flArchivo',modal:'modalFaltasLote'},
     reincorporacion:{button:'btnReincorporacionLote',input:'rlArchivo',modal:'modalReincorporacionLote'},
-    continuan:{button:'btnContinuanFaltosLote',input:'cfArchivo',modal:'modalContinuanFaltosLote'}
+    continuan:{button:'btnContinuanFaltosLote',input:'cfArchivo',modal:'modalContinuanFaltosLote'},
+    'expedientes-lote':{button:'btnExpedientesLote',input:'xlArchivo',modal:'modalExpedientesLote'}
   };
   function toolsMenu(){
     if(state.role!=='admin')throw new Error('permission');

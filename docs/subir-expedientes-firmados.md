@@ -1,7 +1,6 @@
-# Subir expedientes firmados en lote (pendiente de construir)
+# Subir expedientes firmados en lote
 
-Acordado el 28/09/2026. Falta empezar: el responsable enviará modelos de
-expediente firmado para ajustar la lectura antes de escribir la parte de IA.
+Acordado el 28/09/2026 y construido el 29/09/2026 sobre tres modelos reales.
 
 ## Qué se quiere
 
@@ -80,6 +79,76 @@ no dependa de eso.
 
 Falta ver en documento real un expediente terminado en **archivo**: es el único
 camino que todavía no se ha podido comprobar contra un documento de verdad.
+
+## Cómo funciona (construido el 29/09/2026)
+
+El administrador toca **«Subir expediente completo»** en la aplicación: se abre
+el escáner nativo, escanea el fajo entero y, al continuar, la web abre la
+pantalla de revisión con todos los expedientes ya separados. Desde un ordenador
+es el botón **«Expedientes firmados (PDF)»**, que admite varios PDF a la vez.
+
+El recorrido completo:
+
+1. **Leer, página por página.** Los expedientes firmados son escaneos sin capa
+   de texto —comprobado en los tres modelos reales: cero fuentes tipográficas—,
+   así que el texto sale siempre del reconocimiento óptico. Se pide **una página
+   por llamada** a propósito: en lotes se perdería el límite entre página y
+   página, que es justo el dato que hace falta para recortar.
+2. **Separar.** Cada expediente abre con su Hoja de Trámite o con su inicio de
+   imputación. Lo que venga antes de la primera apertura se queda con el primer
+   expediente en vez de perderse.
+3. **Leer los datos** con las reglas de `lib/expedienteFirmado.js`.
+4. **Pedir ayuda a la IA**, solo para los expedientes a los que les falte una
+   llave (tipo `expediente_firmado` de `extraer-nota-informativa`). La IA nunca
+   pisa lo que las reglas ya leyeron, ni decide a qué caso pertenece nada.
+5. **Cruzar** con los casos: número de nota, luego CIP, luego nombre.
+6. **Revisar**, en una sola lista con tres estados: listo, por revisar, detenido.
+7. **Recortar y guardar.** Se saca del PDF solo las páginas de ese expediente y
+   se sube al depósito `expedientes`; la fila va a `public.expedientes` con el
+   caso, el oficio, la hoja de trámite y los días impuestos.
+
+### Lo que la revisión detiene
+
+No se guarda nada sin confirmar, y estas filas no se pueden confirmar:
+
+- no se encontró el caso, o coinciden varios;
+- el expediente no trae ni orden de sanción ni resolución de archivo;
+- **dos expedientes del mismo lote apuntan al mismo caso** (se escaneó dos veces
+  o el cruce se equivocó en uno; se detienen los dos).
+
+Y estas avisan pero sí se pueden guardar: se encontró por CIP o por nombre en
+vez de por número de nota, falta alguna pieza, la sanción no se dejó leer, el
+caso ya tenía un expediente (se reemplaza), o la IA completó parte de los datos.
+
+### Tres arreglos en la base que hicieron falta
+
+Salieron al construir esto, con la tabla todavía vacía:
+
+1. **Faltaba la política de UPDATE en `expedientes`.** El formulario manual
+   insertaba la fila, subía el PDF y lo enlazaba con un `update` que RLS
+   descartaba en silencio: el archivo quedaba en el depósito sin pertenecer a
+   ningún expediente. Era un fallo real, no solo del lote.
+2. **`numero_oficio` y `numero_ht` eran obligatorios.** El expediente suelto no
+   trae ninguno de los dos; obligarlos forzaba a inventar un valor. Ahora son
+   opcionales.
+3. **Nada impedía duplicar.** Repetir la carga creaba un segundo expediente en
+   cada caso sin avisar. Ahora `nota_id` es único y volver a subir es reemplazar,
+   decidido a la vista y borrando el archivo anterior.
+
+### Qué se comprobó de verdad
+
+- Con el fajo real de 25 páginas: recortes de 5, 5 y 15 páginas, cada uno un PDF
+  válido, y **cada página del recorte pesa exactamente lo que la página original
+  que le toca** y distinto de las demás. Corta lo que debe cortar.
+- Con los dos expedientes reales de 6 páginas: cero caracteres de texto en todas,
+  confirmando que el reconocimiento óptico es obligatorio.
+- En el navegador: el módulo carga sin errores y la pantalla de revisión abre y
+  cierra.
+- 26 pruebas de la carga en lote, 52 del lector, 330 en toda la web.
+
+Sin comprobar todavía contra documento real: un expediente terminado en
+**archivo** (sin sanción), y el recorrido entero con sesión iniciada, que
+necesita las credenciales del responsable.
 
 ## Qué datos hay que leer de cada expediente
 
