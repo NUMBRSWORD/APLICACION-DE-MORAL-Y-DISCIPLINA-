@@ -19,6 +19,7 @@ import { restaurarNombres, seudonimizarInvestigados } from "./lib/privacidad.js"
 import { fechaLima, hoyLima, horaLima } from "./lib/fechas.js";
 import { DIAS_MINIMOS, INDETERMINADO, INICIO_INFORME, REMUNERACION, cumpleMinimo, descuentoDeNotas, formatearSoles, textoDescuento, textoDias } from "./lib/descuento.js";
 import { esClaveInicial, validarClaveNueva } from "./lib/acceso.js";
+import { prepararLote, filasGuardables, resumenDelLote, filaAExpediente, necesitaAyudaDeIA, aplicarLecturaDeIA, marcarRepetidos } from "./lib/loteExpedientes.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.6.82/build/pdf.worker.mjs";
 
@@ -3233,6 +3234,74 @@ async function extractPdfText(file, onEstado, { verificarSoloCabecera = false } 
   return textoBase;
 }
 
+// ---------------------------------------------------------------------------
+// Expedientes firmados: leer por página y recortar
+// ---------------------------------------------------------------------------
+
+// Cuántos caracteres hacen creíble que una página traiga texto de verdad y no
+// cuatro restos sueltos de la capa del escáner.
+const MINIMO_TEXTO_POR_PAGINA = 120;
+
+/**
+ * Texto de cada página por separado, en orden.
+ *
+ * `extractPdfText` junta todo y, para leer un fajo, eso no sirve: hace falta
+ * saber en qué página empieza cada expediente para poder recortarlo. Los
+ * expedientes firmados que devuelve el investigado son escaneos sin capa de
+ * texto, así que casi siempre se resuelve con reconocimiento óptico, y se pide
+ * página a página a propósito: en lotes de cuatro se perdería el límite entre
+ * una página y la siguiente, que es justo el dato que se necesita.
+ */
+async function extraerTextoPorPagina(file, onEstado) {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const textos = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const contenido = await page.getTextContent();
+    const delPdf = contenido.items.map((it) => it.str).join(" ");
+    if (delPdf.replace(/\s+/g, "").length >= MINIMO_TEXTO_POR_PAGINA) {
+      textos.push(delPdf);
+      continue;
+    }
+    onEstado?.(`Leyendo con IA la página ${i} de ${pdf.numPages}...`);
+    const viewport = page.getViewport({ scale: 1.8 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    try {
+      textos.push(await transcribirPaginasConIA([{ data: canvasABase64Jpeg(canvas), mediaType: "image/jpeg" }]));
+    } catch (err) {
+      // Una página ilegible no puede tumbar el lote entero: se deja vacía y la
+      // revisión avisará de lo que no se pudo leer de ese expediente.
+      console.error(`No se pudo leer la página ${i} de ${file.name}:`, err);
+      textos.push(delPdf);
+    }
+  }
+  return textos;
+}
+
+/**
+ * Saca de un PDF solo las páginas de un expediente, como archivo nuevo.
+ *
+ * Es imprescindible: un mismo escaneo trae los expedientes de varios efectivos
+ * seguidos. Adjuntar el archivo entero a cada caso metería en el expediente de
+ * cada uno los datos personales de todos los demás.
+ */
+async function recortarPdf(file, desde, hasta) {
+  const { PDFDocument } = await import("https://esm.sh/pdf-lib@1.17.1");
+  const origen = await PDFDocument.load(await file.arrayBuffer());
+  const total = origen.getPageCount();
+  const primera = Math.max(1, Math.min(desde, total));
+  const ultima = Math.max(primera, Math.min(hasta, total));
+  if (primera === 1 && ultima === total) return file;
+  const destino = await PDFDocument.create();
+  const indices = [];
+  for (let i = primera - 1; i <= ultima - 1; i++) indices.push(i);
+  for (const pagina of await destino.copyPages(origen, indices)) destino.addPage(pagina);
+  return new Blob([await destino.save()], { type: "application/pdf" });
+}
+
 async function extractImagenTextoConOcr(blob, onEstado) {
   const base64 = await blobABase64(blob);
   return await transcribirPaginasConIA([{ data: base64, mediaType: blob.type || "image/jpeg" }], onEstado);
@@ -5515,3 +5584,225 @@ function formatearHorasFalto(nota) {
   partes.push(`${min}m`);
   return partes.join(" ");
 }
+
+// ---------------------------------------------------------------------------
+// EXPEDIENTES FIRMADOS EN LOTE
+//
+// El comando junta los expedientes ya terminados —firmados por el investigado y
+// con la sanción impuesta—, los escanea y los sube de una vez. Cada uno se
+// recorta de su PDF y se archiva en el caso que le corresponde, sin tener que
+// entrar caso por caso.
+//
+// La lógica de reconocimiento y cruce vive en lib/loteExpedientes.js, que sí
+// tiene pruebas. Aquí solo está la conexión: leer los archivos, mostrarlos para
+// revisar y guardarlos.
+// ---------------------------------------------------------------------------
+
+let expedientesLoteFilas = [];
+
+$("btnExpedientesLote")?.addEventListener("click", () => {
+  $("xlArchivo").value = "";
+  $("xlStatus").classList.add("hidden");
+  $("xlError").classList.add("hidden");
+  expedientesLoteFilas = [];
+  renderExpedientesLote();
+  $("modalExpedientesLote").classList.remove("hidden");
+});
+$("btnCerrarModalExpLote")?.addEventListener("click", cerrarExpedientesLote);
+$("btnCancelarExpLote")?.addEventListener("click", cerrarExpedientesLote);
+function cerrarExpedientesLote() { $("modalExpedientesLote").classList.add("hidden"); }
+
+/**
+ * Casos que ya tienen un expediente guardado: al confirmar se reemplazaría.
+ * Se saca de lo ya cargado, porque `loadNotas` trae cada nota con sus
+ * expedientes; así no hace falta otra consulta ni puede quedar desfasado.
+ */
+function notasQueYaTienenExpediente() {
+  return state.notas.filter((n) => (n.expedientes || []).length).map((n) => n.id);
+}
+
+$("xlArchivo")?.addEventListener("change", async (e) => {
+  const archivos = [...e.target.files].filter((f) => f.type === "application/pdf");
+  const statusEl = $("xlStatus");
+  const errEl = $("xlError");
+  errEl.classList.add("hidden");
+  expedientesLoteFilas = [];
+  renderExpedientesLote();
+  if (!archivos.length) { statusEl.classList.add("hidden"); return; }
+  statusEl.classList.remove("hidden");
+  try {
+    const leidos = [];
+    for (const file of archivos) {
+      statusEl.textContent = `${file.name}: leyendo...`;
+      leidos.push({
+        nombre: file.name,
+        file,
+        textosPorPagina: await extraerTextoPorPagina(file, (m) => { statusEl.textContent = `${file.name}: ${m}`; }),
+      });
+    }
+    statusEl.textContent = "Cruzando con los casos registrados...";
+    const yaConExpediente = notasQueYaTienenExpediente();
+    let filas = prepararLote(leidos, state.notas, state.efectivos, yaConExpediente);
+    filas = await completarConIA(filas, yaConExpediente, (m) => { statusEl.textContent = m; });
+    // La fila guarda el File de origen para poder recortarlo al guardar.
+    expedientesLoteFilas = filas
+      .map((f) => ({ ...f, file: leidos[f.indiceArchivo].file, confirmada: f.estado !== "detenido" }));
+    renderExpedientesLote();
+    const r = resumenDelLote(expedientesLoteFilas);
+    statusEl.textContent = `${archivos.length} archivo(s): ${r.total} expediente(s) encontrado(s).`;
+  } catch (err) {
+    console.error(err);
+    statusEl.classList.add("hidden");
+    errEl.textContent = "No se pudieron leer los archivos: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  }
+});
+
+/**
+ * Segunda pasada con IA, solo para los expedientes a los que las reglas no les
+ * pudieron sacar una llave. El escaneo torcido o muy sucio es lo normal en un
+ * fajo de veinte hojas, y es justo lo que la IA rescata.
+ *
+ * Si la llamada falla, la fila se queda como estaba: la revisión ya avisa de lo
+ * que no se pudo leer, y es preferible eso a detener el lote entero.
+ */
+async function completarConIA(filas, yaConExpediente, onEstado) {
+  const pendientes = filas.filter(necesitaAyudaDeIA);
+  if (!pendientes.length) return filas;
+  const resultado = [...filas];
+  let hechas = 0;
+  for (const fila of pendientes) {
+    onEstado?.(`Revisando con IA lo que no se dejó leer (${++hechas} de ${pendientes.length})...`);
+    try {
+      const { data, error } = await supabase.functions.invoke("extraer-nota-informativa", {
+        body: { tipo: "expediente_firmado", texto: fila.texto },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const i = resultado.indexOf(fila);
+      resultado[i] = aplicarLecturaDeIA(fila, data, state.notas, state.efectivos, yaConExpediente);
+    } catch (err) {
+      console.error("La revisión con IA del expediente falló; se deja lo leído por reglas:", err);
+    }
+  }
+  return marcarRepetidos(resultado);
+}
+
+const PILDORA_ESTADO = {
+  listo: ["pill-yes", "Listo para archivar"],
+  revisar: ["pill-warning", "Revise antes de archivar"],
+  detenido: ["pill-danger", "No se puede archivar todavía"],
+};
+
+function renderExpedientesLote() {
+  const resumenEl = $("xlResumen");
+  const el = $("xlLista");
+  if (!expedientesLoteFilas.length) {
+    resumenEl.innerHTML = "";
+    el.innerHTML = "";
+    return;
+  }
+  const r = resumenDelLote(expedientesLoteFilas);
+  resumenEl.innerHTML = `<p class="muted small">${r.total} expediente(s): `
+    + `<span class="pill pill-yes">${r.listos} listo(s)</span> `
+    + `<span class="pill pill-warning">${r.revisar} por revisar</span> `
+    + `<span class="pill pill-danger">${r.detenidos} detenido(s)</span></p>`;
+
+  el.innerHTML = expedientesLoteFilas.map((f, i) => {
+    const [clase, texto] = PILDORA_ESTADO[f.estado];
+    const persona = f.nota
+      ? nombreCompletoVisible(f.nota.apellidos, f.nota.nombres)
+      : (f.datos.infractor?.completo || "sin identificar");
+    const sancion = f.datos.dias_sancion === null
+      ? "sanción sin leer"
+      : f.datos.dias_sancion === 0
+      ? "amonestación"
+      : `${f.datos.dias_sancion} día(s) ${f.datos.tipo_sancion === "rigor" ? "de rigor" : "simple(s)"}`;
+    const avisos = f.avisos.length
+      ? `<ul class="muted small" style="margin:6px 0 0 16px">${f.avisos.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`
+      : "";
+    return `
+      <div class="multi-efectivo-row" data-idx="${i}">
+        <label class="checkbox-row"><input type="checkbox" class="xlCheck" ${f.confirmada ? "checked" : ""} ${f.estado === "detenido" ? "disabled" : ""} /></label>
+        <div class="value" style="flex:1">
+          <div><strong>${escapeHtml(persona)}</strong> · ${escapeHtml(f.datos.codigo_infraccion || "sin código")} · ${escapeHtml(sancion)}</div>
+          <div class="muted small" style="margin-top:4px">
+            ${escapeHtml(f.archivo)}, página${f.paginas > 1 ? "s" : ""} ${f.desde}${f.paginas > 1 ? `–${f.hasta}` : ""}
+            ${f.datos.numero_nota_falta ? ` · nota N.º ${escapeHtml(f.datos.numero_nota_falta)}` : ""}
+            ${f.datos.cip_investigado ? ` · CIP ${escapeHtml(f.datos.cip_investigado)}` : ""}
+          </div>
+          ${f.motivoTexto ? `<div class="muted small">${escapeHtml(f.motivoTexto)}</div>` : ""}
+          <span class="pill ${clase}">${texto}</span>
+          ${avisos}
+        </div>
+      </div>`;
+  }).join("");
+
+  el.querySelectorAll(".xlCheck").forEach((chk, i) => {
+    chk.addEventListener("change", () => { expedientesLoteFilas[i].confirmada = chk.checked; });
+  });
+}
+
+$("btnGuardarExpLote")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const statusEl = $("xlStatus");
+  const errEl = $("xlError");
+  errEl.classList.add("hidden");
+
+  const aGuardar = filasGuardables(expedientesLoteFilas).filter((f) => f.confirmada);
+  if (!aGuardar.length) {
+    errEl.textContent = "No hay ningún expediente marcado para archivar.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  ocuparBoton(btn, true, "Archivando...");
+  statusEl.classList.remove("hidden");
+  const fallos = [];
+  let guardados = 0;
+  try {
+    for (const [i, fila] of aGuardar.entries()) {
+      statusEl.textContent = `Archivando ${i + 1} de ${aGuardar.length}...`;
+      try {
+        // Si ese caso ya tenía un expediente, se recuerda su archivo para
+        // borrarlo solo cuando el nuevo haya quedado guardado.
+        const { data: previo } = await supabase.from("expedientes")
+          .select("archivo_expediente_path").eq("nota_id", fila.nota.id).maybeSingle();
+
+        const recorte = await recortarPdf(fila.file, fila.desde, fila.hasta);
+        const path = `${fila.nota.id}/${Date.now()}_${fila.nombreSugerido}`;
+        const { error: upErr } = await supabase.storage.from("expedientes")
+          .upload(path, recorte, { contentType: "application/pdf" });
+        if (upErr) throw upErr;
+
+        const { error: dbErr } = await supabase.from("expedientes")
+          .upsert(filaAExpediente(fila, { path, nombre: fila.nombreSugerido }), { onConflict: "nota_id" });
+        if (dbErr) {
+          // El archivo ya subido no debe quedar suelto en el depósito.
+          await supabase.storage.from("expedientes").remove([path]);
+          throw dbErr;
+        }
+
+        if (previo?.archivo_expediente_path && previo.archivo_expediente_path !== path) {
+          await supabase.storage.from("expedientes").remove([previo.archivo_expediente_path]);
+        }
+        guardados++;
+      } catch (err) {
+        console.error(`No se pudo archivar el expediente de ${fila.nombreSugerido}:`, err);
+        fallos.push(`${fila.archivo} (páginas ${fila.desde}–${fila.hasta}): ${err.message || err}`);
+      }
+    }
+
+    await loadNotas();
+    if (fallos.length) {
+      statusEl.textContent = `Se archivaron ${guardados} de ${aGuardar.length}.`;
+      errEl.innerHTML = `No se pudieron archivar ${fallos.length}:<br>${fallos.map(escapeHtml).join("<br>")}`;
+      errEl.classList.remove("hidden");
+    } else {
+      cerrarExpedientesLote();
+      toast(`Se archivaron ${guardados} expediente(s).`);
+    }
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});

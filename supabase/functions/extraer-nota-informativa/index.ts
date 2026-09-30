@@ -90,6 +90,32 @@ No inventes. Si la persona no aparece, {"encontrado": false, "puesto": null, "si
 
 Responde ÚNICAMENTE con ese objeto JSON, sin texto antes ni después.`;
 
+const SYSTEM_PROMPT_EXPEDIENTE = `Eres un asistente que lee un EXPEDIENTE DISCIPLINARIO YA TERMINADO de la Policía Nacional del Perú (PNP) por infracción leve, a partir de texto sacado por reconocimiento óptico de un escaneo (trae ruido: membretes, sellos, "CONFIDENCIAL", firmas, huellas, "0" por "O").
+
+El expediente reúne varios documentos seguidos: el inicio de imputación, sus notificaciones firmadas, el acta de descargo o de no recepción, y la orden de sanción.
+
+Devuelve SOLO este objeto JSON:
+- "numero_nota_falta": el número de la Nota Informativa de la falta (12 dígitos, junto a "NOTA INFORMATIVA N°", antes del guion que lo pega a la unidad). Si hay varias, la PRIMERA que cite la descripción del hecho. String o null.
+- "cip_investigado": el CIP del INVESTIGADO (6 a 9 dígitos). Va impreso en la decisión de la orden ("SANCIONAR al ... CIP N° ...") y en el acta ("PRESUNTO INFRACTOR ... identificado con CIP N°..."). CUIDADO: en la misma página aparecen los CIP del superior que sanciona y del testigo; NO los devuelvas. String o null.
+- "codigo_infraccion": el código del Anexo I, sin guion ni espacios ("L21", "L24"). String o null.
+- "dias_sancion": los días REALMENTE IMPUESTOS. Entero, 0 si es amonestación, null si no se resolvió.
+- "tipo_sancion": "simple", "rigor" o "amonestacion". null si no consta.
+- "resultado": "sancion" si hay orden de sanción, "archivo" si se resolvió archivar, "incompleto" si no consta ninguna de las dos.
+
+AVISO SOBRE LOS DÍAS, que es el error más fácil de cometer: en un mismo expediente conviven hasta TRES cifras de días y solo una vale.
+1. El RANGO del Anexo I ("Sanción: De 8 a 10 días de Sanción Simple", "De AMONESTACION a CUATRO (04) días"). Sale DOS veces: en la imputación y otra vez dentro de la propia orden, en "Descripción de la infracción". NO es lo impuesto.
+2. El PLAZO PARA IMPUGNAR ("tres (3) días hábiles"). NO es una sanción.
+3. La DECISIÓN, que es la única válida: "V. DECISIÓN: ... SANCIONAR al ... con ocho (08) días de Sanción Simple", o el campo "SANCIÓN IMPUESTA" del formato antiguo.
+Si no encuentras ni decisión ni campo "SANCIÓN IMPUESTA", devuelve dias_sancion null. NUNCA uses el rango ni el plazo como respuesta.
+
+No inventes. Lo que no puedas leer con certeza va como null.
+
+Responde ÚNICAMENTE con ese objeto JSON, sin texto antes ni después.`;
+
+function buildUserMessageExpediente(input: Record<string, unknown>): string {
+  return `Texto del expediente firmado, sacado por reconocimiento óptico (puede tener ruido):\n${input.texto || "(vacío)"}`;
+}
+
 function buildUserMessage(input: Record<string, unknown>): string {
   return [
     `Tipo de nota: ${input.tipo === "reincorporacion" ? "reincorporacion" : "falta"}`,
@@ -122,8 +148,11 @@ Deno.serve(async (req: Request) => {
   try {
     const input = await req.json();
     const esRol = input.tipo === "rol_servicio";
-    const system = esRol ? SYSTEM_PROMPT_ROL : SYSTEM_PROMPT;
-    const userMessage = esRol ? buildUserMessageRol(input) : buildUserMessage(input);
+    const esExpediente = input.tipo === "expediente_firmado";
+    const system = esExpediente ? SYSTEM_PROMPT_EXPEDIENTE : esRol ? SYSTEM_PROMPT_ROL : SYSTEM_PROMPT;
+    const userMessage = esExpediente
+      ? buildUserMessageExpediente(input)
+      : esRol ? buildUserMessageRol(input) : buildUserMessage(input);
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

@@ -128,6 +128,7 @@
         <button id="btnFaltasLote" class="btn-secondary admin-only hidden">Faltas (PDF grupal)</button>
         <button id="btnContinuanFaltosLote" class="btn-secondary admin-only hidden">Continúan faltos (PDF)</button>
         <button id="btnReincorporacionLote" class="btn-secondary admin-only hidden">Reincorporación (PDF grupal)</button>
+        <button id="btnExpedientesLote" class="btn-secondary admin-only hidden">Expedientes firmados (PDF)</button>
         <button id="btnNuevaNota" class="btn-primary admin-only hidden">+ Nueva nota</button>
       </div>
     </div>
@@ -633,6 +634,30 @@
       <div class="modal-actions">
         <button type="button" id="btnCancelarFaltasLote" class="btn-ghost">Cancelar</button>
         <button type="button" id="btnGuardarFaltasLote" class="btn-primary">Registrar faltas</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EXPEDIENTES FIRMADOS EN LOTE -->
+<div id="modalExpedientesLote" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Expedientes firmados</h3>
+      <button id="btnCerrarModalExpLote" class="btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Expedientes ya firmados (PDF) — puede seleccionar varios, y cada archivo puede traer varios expedientes seguidos
+        <input type="file" id="xlArchivo" accept="application/pdf" multiple />
+      </label>
+      <p class="muted small">Cada expediente se recorta del PDF y se archiva solo en el caso que le corresponde, para que el expediente de un efectivo no contenga los datos de los demás. Se reconoce por el número de nota informativa; si no se deja leer, por el CIP impreso en la orden de sanción. Revise y desmarque lo que no corresponda antes de guardar.</p>
+      <p id="xlStatus" class="muted small hidden" aria-live="polite"></p>
+      <div id="xlResumen"></div>
+      <div id="xlLista"></div>
+      <p id="xlError" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelarExpLote" class="btn-ghost">Cancelar</button>
+        <button type="button" id="btnGuardarExpLote" class="btn-primary">Archivar expedientes</button>
       </div>
     </div>
   </div>
