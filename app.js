@@ -2166,19 +2166,29 @@ async function renderNotaDetail(nota) {
           <div class="detail-field"><div class="label">Días de sanción</div><div class="value">${exp.dias_sancion ?? "-"}</div></div>
           <div class="detail-field"><div class="label">Archivo</div><div class="value">${expArchivo}</div></div>
         </div>
-      ` : `
-        <p class="muted small">Sin expediente registrado.</p>
-        <form id="expForm">
-          <div class="grid-2">
-            <label>N.º de oficio<input type="text" id="eOficio" required /></label>
-            <label>N.º de HT<input type="text" id="eHt" required /></label>
-          </div>
-          <label>Días de sanción<input type="number" id="eDias" min="0" /></label>
-          <label>Archivo del expediente<input type="file" id="eArchivo" /></label>
-          <p id="expError" class="error hidden" role="alert"></p>
-          <button type="submit" class="btn-primary">Registrar expediente</button>
-        </form>
-      `}
+      ` : ""}
+      <!-- El formulario se muestra también cuando el expediente ya existe: el
+           número de oficio y sobre todo el de Hoja de Trámite se generan
+           DESPUÉS de subir el expediente firmado (la HT sale del SIGE, no de
+           aquí), así que hace falta poder anotarlos más tarde. Por eso tampoco
+           son obligatorios. -->
+      <details class="reception-documents" ${exp ? "" : "open"}>
+        <summary class="btn-secondary">${exp ? "Completar o corregir el expediente" : "Registrar el expediente"}</summary>
+        <div class="reception-documents-body">
+          ${exp ? `<p class="muted small">Se guarda sobre el expediente que ya existe. Lo que deje en blanco se borra, así que deje escrito lo que quiera conservar. Si adjunta un archivo, reemplaza al anterior.</p>`
+                : `<p class="muted small">Sin expediente registrado. El número de oficio y el de Hoja de Trámite pueden anotarse después, cuando se generen.</p>`}
+          <form id="expForm">
+            <div class="grid-2">
+              <label>N.º de oficio<input type="text" id="eOficio" value="${escapeHtml(exp?.numero_oficio || "")}" /></label>
+              <label>N.º de HT<input type="text" id="eHt" value="${escapeHtml(exp?.numero_ht || "")}" /></label>
+            </div>
+            <label>Días de sanción<input type="number" id="eDias" min="0" value="${exp?.dias_sancion ?? ""}" /></label>
+            <label>Archivo del expediente<input type="file" id="eArchivo" /></label>
+            <p id="expError" class="error hidden" role="alert"></p>
+            <button type="submit" class="btn-primary">${exp ? "Guardar cambios" : "Registrar expediente"}</button>
+          </form>
+        </div>
+      </details>
     </div>
     ` : ""}
 
@@ -2821,20 +2831,37 @@ async function submitExpediente(e, notaId) {
   const dias_sancion = $("eDias").value ? Number($("eDias").value) : null;
   const file = $("eArchivo").files[0];
 
-  const { data: inserted, error } = await supabase.from("expedientes").insert({
-    nota_id: notaId, numero_oficio, numero_ht, dias_sancion,
-  }).select().single();
+  // El expediente puede existir ya, subido en lote: entonces esto lo completa
+  // (el oficio y la HT se generan después) en vez de crear un segundo.
+  const { data: previo } = await supabase.from("expedientes")
+    .select("id, archivo_expediente_path").eq("nota_id", notaId).maybeSingle();
 
-  if (error) { errEl.textContent = "Error: " + error.message; errEl.classList.remove("hidden"); return; }
+  const fila = { nota_id: notaId, numero_oficio: numero_oficio || null, numero_ht: numero_ht || null, dias_sancion };
 
+  // El archivo se sube ANTES de guardar la fila, para que el enlace entre en el
+  // mismo guardado: antes se insertaba la fila y se enlazaba después con un
+  // update, y sin política de UPDATE ese enlace se perdía en silencio.
+  let subida = null;
   if (file) {
-    const path = `${inserted.id}/${Date.now()}_${file.name}`;
+    const path = `${notaId}/${Date.now()}_${file.name}`;
     const { error: upErr } = await supabase.storage.from("expedientes").upload(path, file);
-    if (!upErr) {
-      await supabase.from("expedientes").update({
-        archivo_expediente_path: path, archivo_expediente_nombre: file.name,
-      }).eq("id", inserted.id);
-    }
+    if (upErr) { errEl.textContent = "No se pudo subir el archivo: " + upErr.message; errEl.classList.remove("hidden"); return; }
+    subida = { path, nombre: file.name };
+    fila.archivo_expediente_path = path;
+    fila.archivo_expediente_nombre = file.name;
+  }
+
+  const { error } = await supabase.from("expedientes").upsert(fila, { onConflict: "nota_id" });
+  if (error) {
+    if (subida) await supabase.storage.from("expedientes").remove([subida.path]);
+    errEl.textContent = "Error: " + error.message;
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  // El archivo anterior se borra solo cuando el nuevo ya quedó guardado.
+  if (subida && previo?.archivo_expediente_path && previo.archivo_expediente_path !== subida.path) {
+    await supabase.storage.from("expedientes").remove([previo.archivo_expediente_path]);
   }
   openNotaDetail(notaId);
 }
@@ -3242,42 +3269,100 @@ async function extractPdfText(file, onEstado, { verificarSoloCabecera = false } 
 // cuatro restos sueltos de la capa del escáner.
 const MINIMO_TEXTO_POR_PAGINA = 120;
 
+// Mismo tamaño de lote que el resto de la web. Un fajo de veinticinco hojas se
+// lee en siete llamadas en vez de veinticinco: importa porque el tope diario de
+// IA es de 300 llamadas para todo el sistema.
+const PAGINAS_POR_LOTE_OCR = 4;
+
+/** Una página del PDF convertida en imagen para mandarla a transcribir. */
+async function imagenDePagina(page) {
+  const viewport = page.getViewport({ scale: 1.8 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  return { data: canvasABase64Jpeg(canvas), mediaType: "image/jpeg" };
+}
+
+/**
+ * Transcribe un lote pidiendo que marque dónde acaba cada página.
+ *
+ * Devuelve un texto por página, o null si la cuenta no cuadró con las páginas
+ * enviadas. Null no es un fallo: es la señal de que ese lote hay que repetirlo
+ * de a una. Quedarse con un corte a medias sería peor que no cortar, porque
+ * mandaría páginas de un expediente al expediente de otra persona.
+ */
+async function transcribirLoteSeparado(imagenes) {
+  const { data, error } = await supabase.functions.invoke("extraer-texto-vision", {
+    body: { paginas: imagenes, separar: true },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  const paginas = data?.paginas;
+  return Array.isArray(paginas) && paginas.length === imagenes.length ? paginas : null;
+}
+
 /**
  * Texto de cada página por separado, en orden.
  *
  * `extractPdfText` junta todo y, para leer un fajo, eso no sirve: hace falta
  * saber en qué página empieza cada expediente para poder recortarlo. Los
  * expedientes firmados que devuelve el investigado son escaneos sin capa de
- * texto, así que casi siempre se resuelve con reconocimiento óptico, y se pide
- * página a página a propósito: en lotes de cuatro se perdería el límite entre
- * una página y la siguiente, que es justo el dato que se necesita.
+ * texto, así que casi siempre se resuelve con reconocimiento óptico.
+ *
+ * Se manda de a cuatro páginas pidiendo una marca de corte entre ellas, y solo
+ * si la marca no vuelve completa se repite ESE lote de a una. Así se conserva
+ * el límite exacto entre páginas sin gastar una llamada por hoja.
  */
 async function extraerTextoPorPagina(file, onEstado) {
   const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-  const textos = [];
+  const textos = new Array(pdf.numPages).fill("");
+  const porLeer = [];
+
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const contenido = await page.getTextContent();
     const delPdf = contenido.items.map((it) => it.str).join(" ");
-    if (delPdf.replace(/\s+/g, "").length >= MINIMO_TEXTO_POR_PAGINA) {
-      textos.push(delPdf);
+    if (delPdf.replace(/\s+/g, "").length >= MINIMO_TEXTO_POR_PAGINA) textos[i - 1] = delPdf;
+    else porLeer.push({ numero: i, page, respaldo: delPdf });
+  }
+
+  for (let d = 0; d < porLeer.length; d += PAGINAS_POR_LOTE_OCR) {
+    const lote = porLeer.slice(d, d + PAGINAS_POR_LOTE_OCR);
+    const desde = lote[0].numero;
+    const hasta = lote[lote.length - 1].numero;
+    onEstado?.(`Leyendo con IA ${lote.length > 1 ? `las páginas ${desde}-${hasta}` : `la página ${desde}`} de ${pdf.numPages}...`);
+    // Se dibujan solo las de este lote: tener veinticinco imágenes de escaneo
+    // en memoria a la vez tumbaría el navegador del teléfono.
+    const imagenes = [];
+    for (const p of lote) imagenes.push(await imagenDePagina(p.page));
+
+    let leidas = null;
+    try {
+      leidas = lote.length > 1 ? await transcribirLoteSeparado(imagenes) : [await transcribirPaginasConIA(imagenes)];
+    } catch (err) {
+      console.error(`No se pudo leer el lote ${desde}-${hasta} de ${file.name}:`, err);
+    }
+
+    if (leidas) {
+      lote.forEach((p, k) => { textos[p.numero - 1] = leidas[k]; });
       continue;
     }
-    onEstado?.(`Leyendo con IA la página ${i} de ${pdf.numPages}...`);
-    const viewport = page.getViewport({ scale: 1.8 });
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-    try {
-      textos.push(await transcribirPaginasConIA([{ data: canvasABase64Jpeg(canvas), mediaType: "image/jpeg" }]));
-    } catch (err) {
-      // Una página ilegible no puede tumbar el lote entero: se deja vacía y la
-      // revisión avisará de lo que no se pudo leer de ese expediente.
-      console.error(`No se pudo leer la página ${i} de ${file.name}:`, err);
-      textos.push(delPdf);
+
+    // El lote no se dejó cortar: se repite de a una, que sí es exacto.
+    onEstado?.(`Releyendo una por una las páginas ${desde}-${hasta}...`);
+    for (const p of lote) {
+      try {
+        textos[p.numero - 1] = await transcribirPaginasConIA([await imagenDePagina(p.page)]);
+      } catch (err) {
+        // Una página ilegible no puede tumbar el archivo entero: se deja lo que
+        // hubiera y la revisión avisará de lo que no se pudo leer.
+        console.error(`No se pudo leer la página ${p.numero} de ${file.name}:`, err);
+        textos[p.numero - 1] = p.respaldo;
+      }
     }
   }
+
   return textos;
 }
 

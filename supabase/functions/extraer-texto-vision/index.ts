@@ -70,6 +70,18 @@ Tu única tarea es transcribir EXACTAMENTE el texto visible en cada imagen, en e
 
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto antes ni después, con exactamente esta clave: {"texto": "..."} -- el texto de TODAS las páginas dadas, concatenado en orden, separado por un salto de línea doble entre páginas.`;
 
+// Marca de corte entre páginas. Quien lee un fajo de expedientes necesita saber
+// en qué página empieza cada uno para poder recortar el PDF, y eso se pierde si
+// las páginas vuelven pegadas. Pedir la marca permite seguir mandándolas de a
+// varias por llamada sin perder el límite; el servidor comprueba que vuelvan
+// todas y, si la cuenta no cuadra, lo dice para que el cliente repita ese lote
+// de a una en vez de quedarse con un corte inventado.
+const MARCA_DE_PAGINA = "<<<FIN DE PAGINA>>>";
+
+const SYSTEM_PROMPT_SEPARADO = `${SYSTEM_PROMPT}
+
+ADEMÁS, y esto es obligatorio: escribe la marca ${MARCA_DE_PAGINA} entre una página y la siguiente, en una línea aparte. Va SOLO entre páginas: si te dan N páginas, la marca aparece exactamente N-1 veces, nunca al principio ni al final. Si una página está en blanco o es ilegible entera, deja su hueco vacío pero pon igual su marca: el orden y la cantidad tienen que coincidir con las imágenes dadas.`;
+
 Deno.serve(async (req: Request) => {
   const cors = corsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -100,12 +112,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Quien necesita saber dónde acaba cada página lo pide con `separar`. El
+    // resto de la web sigue recibiendo exactamente lo de siempre.
+    const separar = input.separar === true && paginas.length > 1;
+
     const content = [
       ...paginas.map((p: { data?: string; mediaType?: string }) => ({
         type: "image",
         source: { type: "base64", media_type: p.mediaType || "image/jpeg", data: p.data || "" },
       })),
-      { type: "text", text: `Transcribe estas ${paginas.length} página(s), en el orden dado.` },
+      {
+        type: "text",
+        text: separar
+          ? `Transcribe estas ${paginas.length} páginas, en el orden dado, separando una de otra con ${MARCA_DE_PAGINA}.`
+          : `Transcribe estas ${paginas.length} página(s), en el orden dado.`,
+      },
     ];
 
     // ~900 tokens de salida por página (una página densa de texto legal
@@ -123,7 +144,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: maxTokens,
-        system: SYSTEM_PROMPT,
+        system: separar ? SYSTEM_PROMPT_SEPARADO : SYSTEM_PROMPT,
         messages: [{ role: "user", content }],
       }),
     });
@@ -147,6 +168,15 @@ Deno.serve(async (req: Request) => {
       });
     }
     const parsed = JSON.parse(match[0]);
+
+    if (separar) {
+      // Se devuelve el corte SOLO si la cuenta cuadra con las imágenes que se
+      // mandaron. Un corte a medias sería peor que ninguno: mandaría páginas de
+      // un expediente al expediente de otra persona. Con `paginas: null` el
+      // cliente sabe que tiene que repetir este lote de a una.
+      const partes = String(parsed.texto || "").split(MARCA_DE_PAGINA);
+      parsed.paginas = partes.length === paginas.length ? partes.map((t: string) => t.trim()) : null;
+    }
 
     return new Response(JSON.stringify(parsed), {
       headers: { ...cors, "Content-Type": "application/json" },
