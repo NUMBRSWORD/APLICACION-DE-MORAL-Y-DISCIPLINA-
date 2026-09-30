@@ -159,6 +159,7 @@
     <string name="aviso_caso_nuevo">Tiene un caso nuevo. Ingrese para revisarlo.</string>
     <string name="aviso_plazo_descargo">Revise el plazo de descargo de su caso.</string>
     <string name="aviso_pasos_pendientes">Tiene pasos pendientes en un expediente.</string>
+    <string name="aviso_documentos_por_recibir">Tiene documentos por recibir. Ingrese a Recepcionar documentos.</string>
     <string name="aviso_documento_recibido">Se registró la recepción de un documento. Consulte el expediente.</string>
 
     <string name="recuperacion_titulo">Códigos de recuperación</string>

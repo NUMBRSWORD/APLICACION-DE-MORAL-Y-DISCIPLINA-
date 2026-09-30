@@ -73,6 +73,7 @@ public final class AvisosFirebaseService extends FirebaseMessagingService {
         if ("plazo_descargo".equals(tipo)) return R.string.aviso_plazo_descargo;
         if ("pasos_pendientes".equals(tipo)) return R.string.aviso_pasos_pendientes;
         if ("documento_recibido".equals(tipo)) return R.string.aviso_documento_recibido;
+        if ("documentos_por_recibir".equals(tipo)) return R.string.aviso_documentos_por_recibir;
         if ("prueba".equals(tipo)) return R.string.aviso_prueba;
         return 0;
     }
