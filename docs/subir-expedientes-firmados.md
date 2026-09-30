@@ -9,7 +9,7 @@ administrador junta todos esos expedientes completos, los escanea o los tiene en
 PDF, y **los sube todos de una vez**. La aplicación lee cada documento, reconoce
 de quién es y a qué falta corresponde, y lo guarda en ese expediente.
 
-Lo que hoy obliga a hacer y debe desaparecer: entrar caso por caso, buscar al
+Lo que antes obligaba a hacer, y ya no: entrar caso por caso, buscar al
 efectivo en la lista y subirle su PDF.
 
 ## Dónde encaja en la base
@@ -26,7 +26,7 @@ Ya existe `public.expedientes`, una fila por nota:
 El archivo va al depósito `expedientes`, cuya política de subida ya exige ser
 administrador.
 
-## Las tres piezas
+## Las tres piezas (así se plantearon el 28/09/2026; las tres están hechas)
 
 1. **La IA aprende a leer un expediente firmado.** Hoy `extraer-nota-informativa`
    distingue nota de falta y de reincorporación. Hace falta un tipo nuevo que
