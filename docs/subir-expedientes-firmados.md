@@ -110,9 +110,14 @@ El recorrido completo:
    pisa lo que las reglas ya leyeron, ni decide a qué caso pertenece nada.
 5. **Cruzar** con los casos: número de nota, luego CIP, luego nombre.
 6. **Revisar**, en una sola lista con tres estados: listo, por revisar, detenido.
-7. **Recortar y guardar.** Se saca del PDF solo las páginas de ese expediente y
-   se sube al depósito `expedientes`; la fila va a `public.expedientes` con el
-   caso, el oficio, la hoja de trámite y los días impuestos.
+7. **Confirmar la fecha** en que se notificó la orden. Se propone leída de la
+   casilla 2 de la hoja de notificación, pero se confirma a la vista: de ella
+   arrancan los tres días hábiles para apelar, y una fecha legal no se guarda
+   adivinada.
+8. **Recortar y guardar.** Se saca del PDF solo las páginas de ese expediente y
+   se guarda **en el mismo sitio que el formulario de un solo caso**: depósito
+   `notas` y `registrar_notificacion_orden`, que es lo que deja el caso por
+   concluido.
 
 ### Lo que la revisión detiene
 
@@ -127,14 +132,31 @@ Y estas avisan pero sí se pueden guardar: se encontró por CIP o por nombre en
 vez de por número de nota, falta alguna pieza, la sanción no se dejó leer, el
 caso ya tenía un expediente (se reemplaza), o la IA completó parte de los datos.
 
+### Dónde se guarda, y por qué importa
+
+El legajo firmado vive en `notas_informativas.archivo_orden_notificacion_path`,
+y `orden_notificada_at` es lo que marca el caso como concluido. Es el sitio que
+usa el formulario de un solo caso y donde el resto de la aplicación lo busca.
+
+La primera versión de la carga en lote lo guardaba en `public.expedientes`, una
+tabla que existe con campos de oficio, HT y días **pero está vacía: nadie la
+usa**. La consecuencia era seria: los casos nunca habrían pasado a concluidos y
+la bandeja habría seguido pidiendo un expediente ya subido, para siempre.
+
+De paso, la lectura compara los **días del papel** con los que la web registró
+al generar la orden (`sancion_dias`). Si no cuadran, uno de los dos está mal y
+la fila se detiene a revisión.
+
 ### El oficio y la Hoja de Trámite se anotan después
 
-Los dos se generan **cuando el expediente ya está subido**: el oficio puede
-salir de la web, pero la Hoja de Trámite sale del SIGE. Por eso la carga en
-lote los deja vacíos, y por eso el formulario del expediente en el detalle del
-caso **se muestra también cuando el expediente ya existe**, con sus valores
-cargados, para completarlos o corregirlos más tarde. Antes solo aparecía si el
-caso no tenía expediente: subido en lote, no habría habido dónde anotarlos.
+Ninguno de los dos existe cuando se sube el legajo: el oficio se hace **después**
+de tener el expediente completo, y la Hoja de Trámite la emite el SIGE y vuelve
+**recepcionada por DIVOPUS**, como documento a adjuntar.
+
+Por eso el caso no queda mudo al archivarlo: pasa a **«Expediente recibido,
+falta el oficio»**, y después a **«Oficio hecho, falta la Hoja de Trámite»**.
+Los dos salen además en la bandeja de pendientes. Ambos adjuntos se guardan en
+`expedientes_remitidos`, que ya tenía sus columnas y su formulario en Recepción.
 
 ### Tres arreglos en la base que hicieron falta
 
