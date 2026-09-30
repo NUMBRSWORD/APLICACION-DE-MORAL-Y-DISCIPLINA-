@@ -54,6 +54,33 @@ administrador.
   casos y revisar antes de guardar.
 - `ExpedienteActivity`: escáner y selección de PDF ya hechos y probados.
 
+## Lo que enseñaron los modelos reales (29/09/2026)
+
+El responsable envió tres fajos escaneados. De ahí salieron cuatro cosas que no
+se habrían adivinado, y dos de ellas ya causaban datos erróneos:
+
+1. **Un PDF trae varios expedientes seguidos.** Uno de los fajos tenía 25 páginas
+   con cinco expedientes; el segundo empieza en la página 6. Cada uno abre con su
+   Hoja de Trámite del SIGE. Por eso hay que recortar el PDF: si se adjunta
+   entero a cada caso, el expediente de cada efectivo contendría los datos de los
+   demás.
+2. **El código se escribe con guion**: `L-21` en la imputación, `L21` en la orden.
+3. **«Sanción» en la imputación es el rango del Anexo**, no lo impuesto: «De
+   AMONESTACION a CUATRO (04) días de Sanción Simple». Solo el campo «SANCIÓN
+   IMPUESTA» de la orden dice lo que se resolvió.
+4. **La notificación puede ser una hoja aparte**: «Notificación y entrega de acto
+   administrativo», con diecisiete casillas donde se marca cuál de los actos se
+   notifica (1 imputación, 2 orden de sanción, 3 archivo…) y la constancia de
+   recepción con firma y huella. En los modelos antiguos ese recuadro iba al pie
+   del propio documento.
+
+Detalle práctico: varias páginas venían escaneadas de lado. El escáner de la
+aplicación endereza solo, pero conviene escanear derecho para que la lectura
+no dependa de eso.
+
+Falta ver en documento real: una orden de sanción con días impuestos (solo se ha
+visto amonestación) y un expediente terminado en archivo.
+
 ## Riesgo a tener presente
 
 `app.js` no tiene pruebas automáticas (hallazgo M8 de la auditoría), y ahí viven
