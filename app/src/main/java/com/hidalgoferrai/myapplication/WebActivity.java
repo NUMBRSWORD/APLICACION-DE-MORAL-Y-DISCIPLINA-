@@ -291,7 +291,10 @@ public class WebActivity extends AppCompatActivity {
     @Override protected void onResume() {
         super.onResume();
         // Al volver de una herramienta hija se recupera el interceptor de esta pantalla.
-        if (webView != null) configurarServiceWorker();
+        if (webView != null) {
+            configurarServiceWorker();
+            if (moduloListo) webView.evaluateJavascript("window.dispatchEvent(new Event('faltos-resume'))", null);
+        }
     }
 
     private void configurarServiceWorker() {

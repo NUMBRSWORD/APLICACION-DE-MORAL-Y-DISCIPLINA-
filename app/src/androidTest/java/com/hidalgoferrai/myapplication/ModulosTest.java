@@ -147,10 +147,12 @@ public class ModulosTest {
             Thread.sleep(400);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             onView(withText(R.string.inicio_subir_completo)).perform(scrollTo(),click());
-            esperar(R.id.webView,null);
+            esperar(R.id.btnEscanear,null);
             main(()->{
+                boolean scanner=false;
                 for(Activity a:ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED))
-                    if(a instanceof WebActivity)assertEquals("consulta",a.getIntent().getStringExtra(WebActivity.EXTRA_VISTA));
+                    if(a instanceof ExpedienteActivity)scanner=true;
+                assertTrue("El administrador abre el escáner de expedientes firmados",scanner);
             });
         }
     }
@@ -219,6 +221,18 @@ public class ModulosTest {
         try(ActivityScenario<ExpedienteActivity> s=ActivityScenario.launch(ExpedienteActivity.class)){
             s.onActivity(a->a.prepararPdf(archivo));esperar(R.id.estadoPanel,null);
             s.onActivity(a->assertEquals(View.GONE,a.findViewById(R.id.tarjetaPdf).getVisibility()));
+        }
+    }
+    @Test public void expedienteFirmadoEsperaCasosAntesDeEntregarPdf() throws Exception {
+        actualizacionesPrueba();
+        Uri archivo=pdf(true);
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("expedientes-lote")
+                .putExtra(WebActivity.EXTRA_DOCUMENTO,archivo.toString())
+                .putExtra(WebActivity.EXTRA_NOMBRE_DOCUMENTO,"firmado-demo.pdf"))){
+            esperar(R.id.webView,null);
+            esperarJs(s,"updatesQa.batchFile==='firmado-demo.pdf'");
+            assertEquals("true",js(s,"updatesQa.batchSawNotes && updatesQa.batchReadNotes"));
+            assertEquals("false",js(s,"window.submitted"));
         }
     }
     @Test public void moduloAusenteMuestraErrorNoInicioGenerico() throws Exception {

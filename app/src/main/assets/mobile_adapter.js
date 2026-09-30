@@ -115,10 +115,11 @@
     const originalNotes=loadNotas;
     loadNotas=function(...args){
       const previous=state.notas;
-      notesPromise=Promise.resolve(originalNotes(...args)).then(()=>{
+      notesPromise=Promise.resolve(originalNotes(...args)).then(result=>{
         // La web conserva el array anterior cuando falla la consulta. No mostrar
         // un panel vacío o datos antiguos como si la carga hubiera terminado.
-        if(state.notas===previous)throw new Error('notes');
+        if(result===false||(result!==true&&state.notas===previous))throw new Error('notes');
+        return result ?? true;
       });
       notesPromise.catch(()=>post('error'));return notesPromise;
     };
@@ -198,7 +199,7 @@
   async function openModule(){
     if(opened)return;
     if(!state.role)throw new Error('profile');
-    if(['panel','agenda','seguimiento','reincorporacion','continuan'].includes(c.view)){
+    if(['panel','agenda','seguimiento','registro','expedientes-lote','reincorporacion','continuan'].includes(c.view)){
       if(notesPromise)await notesPromise;else if(typeof loadNotas==='function')await loadNotas();
     }
     if(c.view==='herramientas')toolsMenu();

@@ -42,7 +42,6 @@
                 android:id="@+id/etiqueta"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:maxLines="2"
                 android:textAppearance="?attr/textAppearanceTitleMedium"
                 android:textColor="@color/texto_principal"
                 android:textStyle="bold" />

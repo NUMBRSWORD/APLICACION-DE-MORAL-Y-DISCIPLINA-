@@ -78,7 +78,7 @@
     #topbar, #view-login, #btnTemaToggle, .install-banner { display:none!important; }
     [data-native-gate] #view-token { padding:20px; }
     [data-native-gate=password] .modal-overlay:not(.hidden) { z-index:10000; }
-    .native-tools-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+    .native-tools-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr)); }
     .native-tool { text-align:left; display:grid; gap:8px; padding:20px; border:1px solid var(--border); border-radius:18px; background:var(--bg-card); color:var(--text); }
     .native-tool strong { color:var(--accent); font-size:1.05rem; }
     .native-tool span { color:var(--text-muted); line-height:1.5; }
@@ -98,6 +98,12 @@
     .btn { border-radius:12px!important; }
     .modal { width:calc(100% - 24px)!important; max-height:92dvh!important; border-radius:22px!important; }
     .table-wrap, .table-wrapper { overflow-x:auto; }
+    .view, .view-header > *, .modal-body, .detail-card, .native-case,
+    .multi-efectivo-row > .value { min-width:0; overflow-wrap:anywhere; }
+    .view-actions > button, .native-case button { white-space:normal; max-width:100%; }
+    .modal-header h3 { min-width:0; overflow-wrap:anywhere; }
+    .modal-header > button { flex-shrink:0; }
+    input[type=file] { max-width:100%; min-width:0; }
     h1, h2, h3 { letter-spacing:-.025em; }
     .native-case { padding:20px; margin:16px 0; border:1px solid var(--border); border-radius:20px; background:var(--bg-card); color:var(--text); }
     .native-case h3 { margin:0 0 12px; font-size:1.15rem; }

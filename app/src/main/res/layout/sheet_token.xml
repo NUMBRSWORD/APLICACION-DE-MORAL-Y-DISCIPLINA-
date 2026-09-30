@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:fillViewport="true" android:clipToPadding="false">
+<LinearLayout
     android:layout_width="match_parent" android:layout_height="wrap_content"
     android:orientation="vertical" android:gravity="center_horizontal" android:padding="28dp">
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="@string/token_inferior" android:textSize="24sp" android:textStyle="bold"
         android:textColor="@color/texto_principal" android:gravity="center"/>
-    <TextView android:id="@+id/tvCodigoInferior" android:layout_width="match_parent"
+    <androidx.appcompat.widget.AppCompatTextView xmlns:app="http://schemas.android.com/apk/res-auto"
+        android:id="@+id/tvCodigoInferior" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="20dp"
         android:textSize="42sp" android:fontFamily="monospace" android:textStyle="bold"
+        android:maxLines="1" app:autoSizeTextType="uniform"
+        app:autoSizeMinTextSize="24sp" app:autoSizeMaxTextSize="42sp" app:autoSizeStepGranularity="1sp"
         android:gravity="center" android:textColor="@color/texto_principal"
         android:importantForAutofill="no" android:saveEnabled="false"/>
     <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -28,3 +34,4 @@
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="16dp" android:text="@string/token_cerrar"/>
 </LinearLayout>
+</ScrollView>

@@ -9,11 +9,12 @@ for(const name of ['panel','roles','directivas','agenda','documentos','historial
   view.innerHTML='<h2>'+name+'</h2><p class="muted">Datos de demostración</p>';qMain.appendChild(view);
   button.onclick=()=>{uq.panelSawNotes=uq.notesReady;showView(view.id);};
 }
-for(const [buttonId,inputId,modalId] of [['btnReincorporacionLote','rlArchivo','modalReincorporacionLote'],['btnContinuanFaltosLote','cfArchivo','modalContinuanFaltosLote']]){
+for(const [buttonId,inputId,modalId] of [['btnReincorporacionLote','rlArchivo','modalReincorporacionLote'],['btnContinuanFaltosLote','cfArchivo','modalContinuanFaltosLote'],['btnExpedientesLote','xlArchivo','modalExpedientesLote']]){
   const b=document.createElement('button');b.id=buttonId;document.getElementById('view-dashboard').appendChild(b);
   const m=document.createElement('div');m.id=modalId;m.className='modal hidden';
   m.innerHTML='<h2>Revisar documentos</h2><input type="file" id="'+inputId+'" accept="application/pdf" multiple>';
-  qMain.appendChild(m);b.onclick=()=>m.classList.remove('hidden');
+  qMain.appendChild(m);b.onclick=()=>{uq.batchSawNotes=uq.notesReady;m.classList.remove('hidden');};
+  m.querySelector('input').onchange=e=>{uq.batchFile=e.target.files[0]?.name;uq.batchReadNotes=uq.notesReady;};
 }
 for(const id of ['modalCambiarClave','view-token']){
   const el=document.createElement('div');el.id=id;el.className='modal hidden';

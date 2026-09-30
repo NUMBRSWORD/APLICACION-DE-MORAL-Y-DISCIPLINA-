@@ -12,7 +12,8 @@ for(const name of ['cumplimiento','seguimiento','efectivos','panel','roles','dir
   assert.ok(html.includes(`id="view-${name}"`),`Vista: ${name}`);
 }
 for(const id of ['view-token','modalCambiarClave','btnVolverDashboard','btnFaltasLote','flArchivo','modalFaltasLote',
-  'btnReincorporacionLote','rlArchivo','modalReincorporacionLote','btnContinuanFaltosLote','cfArchivo','modalContinuanFaltosLote'])
+  'btnReincorporacionLote','rlArchivo','modalReincorporacionLote','btnContinuanFaltosLote','cfArchivo','modalContinuanFaltosLote',
+  'btnExpedientesLote','xlArchivo','modalExpedientesLote'])
   assert.ok(html.includes(`id="${id}"`),`Elemento: ${id}`);
 for(const rpc of ['necesita_cambiar_clave','confirmar_cambio_clave'])assert.ok(js.includes(`"${rpc}"`),`RPC: ${rpc}`);
 assert.match(js,/state\.notas\s*=\s*data\s*\|\|\s*\[\]/,'Detectar carga completa de notas');
