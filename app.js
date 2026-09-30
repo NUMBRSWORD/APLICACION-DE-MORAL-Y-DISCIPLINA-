@@ -6,6 +6,7 @@ import { renderizarImputacionDocx, construirDatosImputacion, puedeGenerarImputac
 import { renderizarActaNoDescargoDocx, construirDatosActaNoDescargo, puedeGenerarActaNoDescargo, plazoDescargoVencido, fechaLimiteDescargo } from "./lib/actaNoDescargo.js";
 import { renderizarOrdenSancionDocx, construirDatosOrdenSancion, puedeGenerarOrdenSancion, opcionesTercio, buildCasoConcreto, analisisSinDescargoDefault } from "./lib/ordenSancion.js";
 import { renderizarArchivoLeveDocx, puedeGenerarArchivoLeve } from "./lib/archivoLeve.js";
+import { renderizarOficioRemisionDocx, puedeGenerarOficioRemision, cargarFirmantes, guardarFirmantes } from "./lib/oficioRemision.js";
 import { renderizarInformeAdministrativoDocx, puedeGenerarInformeAdministrativo, diasDeAusencia, INFRACCIONES_GRAVES } from "./lib/informeAdministrativo.js";
 import { cargarDocxDeps } from "./lib/docxDeps.js";
 import { getInfraccion, normalizarCodigoInfraccion } from "./lib/anexoI.js";
@@ -1904,6 +1905,8 @@ async function renderNotaDetail(nota) {
   const puedeSancion = puedeGenerarOrdenSancion(nota, state.efectivos);
   const opcionesSancion = opcionesTercio(nota.codigo_infraccion) || [];
   const puedeArchivo = puedeGenerarArchivoLeve(nota, state.efectivos);
+  const puedeOficio = puedeGenerarOficioRemision(nota, state.efectivos);
+  const firmantesOficio = cargarFirmantes();
   const avisoConsistencia = verificarConsistenciaCodigo(nota);
   const puedeInformeAdmin = puedeGenerarInformeAdministrativo(nota, state.efectivos);
   const yoMismoInforme = state.cip ? state.efectivos.find((ef) => ef.cip === state.cip) : null;
@@ -2155,6 +2158,37 @@ async function renderNotaDetail(nota) {
     </div>
     ` : ""}
 
+    ${puedeOficio ? `
+    <div class="detail-card">
+      <h3>Oficio de remisión</h3>
+      <p class="muted small">Remite al Jefe de la DIVOPUS la Orden de Sanción, la Notificación y entrega del acto administrativo, el Acta de no recepción de descargos y el Inicio de imputación. Los firmantes cambian con los relevos: confirme si continúan.</p>
+      <form id="oficioForm">
+        <label>N.º de oficio<input type="text" id="oNumero" inputmode="numeric" value="${escapeHtml(exp?.numero_oficio || "")}" required /></label>
+        <p class="small"><strong>Jefe DIVOPUS:</strong> ${escapeHtml(firmantesOficio.jefe_grado)} ${escapeHtml(firmantesOficio.jefe_nombre)}<br>
+        <strong>Comisario:</strong> ${escapeHtml(firmantesOficio.firma_grado)} ${escapeHtml(firmantesOficio.firma_nombre)} (${escapeHtml(firmantesOficio.firma_oa)})</p>
+        <label class="checkbox"><input type="checkbox" id="oContinuan" ${firmantesOficio.jefe_nombre && firmantesOficio.firma_nombre && firmantesOficio.firma_oa ? "checked" : ""} /> Continúan el mismo Jefe y Comisario</label>
+        <div id="oCambios" class="${firmantesOficio.jefe_nombre && firmantesOficio.firma_nombre && firmantesOficio.firma_oa ? "hidden" : ""}">
+          <div class="grid-2">
+            <label>Jefe: grado<input type="text" id="oJefeGrado" value="${escapeHtml(firmantesOficio.jefe_grado)}" /></label>
+            <label>Jefe: nombre completo<input type="text" id="oJefeNombre" value="${escapeHtml(firmantesOficio.jefe_nombre)}" /></label>
+          </div>
+          <label>Jefe: cargo<input type="text" id="oJefeCargo" value="${escapeHtml(firmantesOficio.jefe_cargo)}" /></label>
+          <div class="grid-2">
+            <label>Comisario: grado<input type="text" id="oFirmaGrado" value="${escapeHtml(firmantesOficio.firma_grado)}" /></label>
+            <label>Comisario: nombre completo<input type="text" id="oFirmaNombre" value="${escapeHtml(firmantesOficio.firma_nombre)}" /></label>
+          </div>
+          <div class="grid-2">
+            <label>Comisario: OA (OA-CIP)<input type="text" id="oFirmaOa" value="${escapeHtml(firmantesOficio.firma_oa)}" /></label>
+            <label>Comisario: cargo<input type="text" id="oFirmaCargo" value="${escapeHtml(firmantesOficio.firma_cargo)}" /></label>
+          </div>
+          <label>Iniciales del pie (ej. ARG/hbhf)<input type="text" id="oIniciales" value="${escapeHtml(firmantesOficio.iniciales)}" /></label>
+        </div>
+        <p id="oficioError" class="error hidden" role="alert"></p>
+        <button type="submit" class="btn-primary">${svgIco("descargar")}Descargar oficio</button>
+      </form>
+    </div>
+    ` : ""}
+
     ${isAdmin ? `
     <div class="detail-card">
       <h3>Expediente</h3>
@@ -2211,6 +2245,36 @@ async function renderNotaDetail(nota) {
     openNotaDetail(nota.id);
   });
   $("btnDescargarActaDetalle")?.addEventListener("click", (e) => handleDescargarActaNoDescargo(nota, e.currentTarget));
+  $("oContinuan")?.addEventListener("change", (e) => $("oCambios").classList.toggle("hidden", e.target.checked));
+  $("oficioForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = e.submitter || e.currentTarget.querySelector("button[type=submit]");
+    const errEl = $("oficioError");
+    errEl.classList.add("hidden");
+    ocuparBoton(btn, true, "Generando...");
+    try {
+      let firmantes = cargarFirmantes();
+      if (!$("oContinuan").checked) {
+        firmantes = {
+          ...firmantes,
+          jefe_grado: $("oJefeGrado").value.trim(), jefe_nombre: $("oJefeNombre").value.trim(), jefe_cargo: $("oJefeCargo").value.trim(),
+          firma_grado: $("oFirmaGrado").value.trim(), firma_nombre: $("oFirmaNombre").value.trim(),
+          firma_oa: $("oFirmaOa").value.trim(), firma_cargo: $("oFirmaCargo").value.trim(),
+          iniciales: $("oIniciales").value.trim(),
+        };
+      }
+      const numeroOficio = $("oNumero").value.trim();
+      const blob = await renderizarOficioRemisionDocx(nota, state.efectivos, { numeroOficio, firmantes });
+      guardarFirmantes(firmantes);
+      saveAs(blob, nombreArchivoDocumento(`OFICIO ${numeroOficio}`, nota));
+    } catch (err) {
+      console.error(err);
+      errEl.textContent = err.message || "No se pudo generar el oficio.";
+      errEl.classList.remove("hidden");
+    } finally {
+      ocuparBoton(btn, false);
+    }
+  });
   $("btnAbrirRecepcionDesdeNota")?.addEventListener("click", () => { showView("view-recepcion"); loadNotas().then(loadExpedientesRemitidos); });
   $("btnRevisarImputacion")?.addEventListener("click", () => abrirRevision("imputacion", nota));
   $("btnRevisarActa")?.addEventListener("click", () => abrirRevision("acta", nota));

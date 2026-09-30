@@ -44,3 +44,8 @@ plantillas/*_ejemplo.docx
 .env.*
 supabase/.temp/
 supabase/.branches/
+
+# Oficio: datos reales de firmantes y oficios generados (repositorio publico)
+oficio/datos.json
+oficio/OFICIO_*.docx
+OFICIO_PLANTILLA_CASO_HIPOTETICO*.docx
