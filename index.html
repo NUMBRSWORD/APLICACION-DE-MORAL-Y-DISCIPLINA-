@@ -731,7 +731,11 @@
         <label>Grado del comisario que firma<input type="text" id="ofComisarioGrado" placeholder="CAPITAN" /></label>
         <label>Nombre del comisario que firma<input type="text" id="ofComisarioNombre" placeholder="Nombres APELLIDOS" /></label>
       </div>
-      <p class="muted small">Confírmelo cada vez: de aquí salen las iniciales de la firma.</p>
+      <div class="grid-2">
+        <label>N.º OA del comisario<input type="text" id="ofComisarioOa" placeholder="315820" /></label>
+        <label>Cargo del comisario<input type="text" id="ofComisarioCargo" value="COMISARIO DE VENTANILLA" /></label>
+      </div>
+      <p class="muted small">Confírmelo cada vez: de aquí salen las iniciales y el bloque de firma del pie.</p>
       <p id="ofResumen" class="muted small"></p>
       <p id="ofError" class="error hidden" role="alert"></p>
       <div class="modal-actions">

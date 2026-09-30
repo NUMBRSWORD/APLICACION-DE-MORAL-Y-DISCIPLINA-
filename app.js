@@ -6000,6 +6000,8 @@ function abrirOficio(nota) {
   $("ofJefeCargo").value = previo.jefeCargo || "JEFE DE LA DIVOPUS 03 VENTANILLA";
   $("ofComisarioGrado").value = previo.comisarioGrado || "";
   $("ofComisarioNombre").value = previo.comisarioNombre || "";
+  $("ofComisarioOa").value = previo.comisarioOa || "";
+  $("ofComisarioCargo").value = previo.comisarioCargo || "COMISARIO DE VENTANILLA";
   $("ofJefeDesde").textContent = previo.confirmado
     ? `Confirmado por última vez el ${formatDate(previo.confirmado)}. Si cambiaron, corríjalo aquí.`
     : "Todavía no se ha confirmado ninguno: escríbalos y quedarán recordados.";
@@ -6020,6 +6022,8 @@ function datosDelOficioEnPantalla() {
     comisario: {
       grado: $("ofComisarioGrado").value.trim(),
       nombre: $("ofComisarioNombre").value.trim(),
+      oa: $("ofComisarioOa").value.trim(),
+      cargo: $("ofComisarioCargo").value.trim(),
     },
     // Quién impuso la sanción sale del propio caso: es el oficial que constató
     // y firmó la orden, y puede no ser el comisario que firma este oficio.
@@ -6040,7 +6044,7 @@ function refrescarResumenOficio() {
   $("btnGenerarOficio").disabled = falta.length > 0;
 }
 
-["ofNumero", "ofJefeGrado", "ofJefeNombre", "ofJefeCargo", "ofComisarioGrado", "ofComisarioNombre"]
+["ofNumero", "ofJefeGrado", "ofJefeNombre", "ofJefeCargo", "ofComisarioGrado", "ofComisarioNombre", "ofComisarioOa", "ofComisarioCargo"]
   .forEach((id) => $(id)?.addEventListener("input", refrescarResumenOficio));
 
 $("btnCerrarModalOficio")?.addEventListener("click", cerrarOficio);
@@ -6068,6 +6072,8 @@ $("btnGenerarOficio")?.addEventListener("click", async (e) => {
       jefeCargo: $("ofJefeCargo").value.trim(),
       comisarioGrado: $("ofComisarioGrado").value.trim(),
       comisarioNombre: $("ofComisarioNombre").value.trim(),
+      comisarioOa: $("ofComisarioOa").value.trim(),
+      comisarioCargo: $("ofComisarioCargo").value.trim(),
     });
     cerrarOficio();
     toast("Oficio generado. Adjúntelo en Recepción junto con la Hoja de Trámite cuando la reciba.");
