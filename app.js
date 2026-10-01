@@ -23,6 +23,7 @@ import { prepararLote, revisarFila, filasGuardables, resumenDelLote, filaARegist
 import { estadoDeRemision, esperaOficio, esperaHojaDeTramite } from "./lib/remision.js";
 import { datosDelOficio, documentosRemitidos, faltaParaElOficio, renderizarOficioRemisionDocx } from "./lib/oficioRemision.js";
 import { piezasDelExpediente } from "./lib/expedienteFirmado.js";
+import { leerTodasLasPaginas, cargaCompartida, puedeActualizar } from "./lib/cargaDatos.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.6.82/build/pdf.worker.mjs";
 
@@ -423,15 +424,48 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     if (target === "efectivos") { showView("view-efectivos"); loadEfectivos(); }
     if (target === "roles") { showView("view-roles"); loadRolesServicio(); }
     if (target === "directivas") { showView("view-directivas"); loadDirectivasView(); }
-    if (target === "agenda") { showView("view-agenda"); renderAgendaNotas(); }
+    if (target === "agenda") { showView("view-agenda"); actualizarVistaCompartida(); }
     if (target === "documentos") { showView("view-documentos"); loadDocumentosGenerados(); }
     if (target === "recepcion") { showView("view-recepcion"); loadNotas().then(loadExpedientesRemitidos); }
-    if (target === "panel") { showView("view-panel"); renderPanel(); }
+    if (target === "panel") { showView("view-panel"); actualizarVistaCompartida(); }
     if (target === "historial") { showView("view-historial"); loadHistorial(); }
   });
 });
 
 $("btnVolverDashboard").addEventListener("click", () => { showView("view-dashboard"); loadNotas(); });
+
+// Sincronización de lectura entre web y APK. No recarga la página, no navega al
+// inicio y nunca reemplaza un formulario abierto. Supabase sigue aplicando RLS.
+const actualizarVistaCompartida = cargaCompartida(async () => {
+  const vista = document.querySelector('.view:not(.hidden)')?.id;
+  if (!puedeActualizar({visible:document.visibilityState === 'visible', sesion:state.session && state.role,
+    modal:!!document.querySelector('.modal-overlay:not(.hidden)'),
+    editando:!!document.activeElement?.matches('input,textarea,select,[contenteditable=true]'), vista})) return;
+  const usuario = state.session.user.id;
+  let aviso = $("estadoSincronizacion");
+  if (!aviso) {
+    aviso = document.createElement('p'); aviso.id='estadoSincronizacion'; aviso.className='muted small';
+    aviso.setAttribute('role','status');
+  }
+  $(vista).prepend(aviso);
+  aviso.textContent='Actualizando datos…';
+  try {
+    const ok = vista === 'view-efectivos' ? await loadEfectivos() : await loadNotas();
+    if (usuario !== state.session?.user?.id) { aviso.remove(); return; }
+    if (ok === false) throw new Error('datos');
+    if (document.querySelector('.view:not(.hidden)')?.id === vista) {
+      if (vista === 'view-panel') await renderPanel();
+      if (vista === 'view-agenda') renderAgendaNotas();
+    }
+    aviso.textContent='Datos actualizados · '+new Intl.DateTimeFormat('es-PE',{hour:'2-digit',minute:'2-digit'}).format(new Date());
+  } catch (_) {
+    aviso.textContent='Sin actualizar: compruebe su conexión. Los datos visibles pueden estar desactualizados.';
+  }
+});
+window.addEventListener('focus', actualizarVistaCompartida);
+window.addEventListener('faltos-resume', actualizarVistaCompartida);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) actualizarVistaCompartida(); });
+setInterval(actualizarVistaCompartida, 60000);
 
 // ---------- Paleta de búsqueda global (Ctrl + K) ----------
 // Salta rápido a un expediente sin recorrer pestañas. Trabaja sobre lo ya
@@ -680,6 +714,9 @@ async function onAuthed(session) {
 function onSignedOut() {
   state.session = null;
   state.role = null;
+  state.notas = []; state.efectivos = []; state.remisiones = [];
+  state.expedientesRemitidos = []; state.currentNotaId = null;
+  $("estadoSincronizacion")?.remove();
   $("topbar").classList.add("hidden");
   showView("view-login");
 }
@@ -865,17 +902,26 @@ $("cambiarClaveForm").addEventListener("submit", async (e) => {
 
 // ---------- Notas informativas ----------
 async function loadNotas() {
-  const { data, error } = await supabase
-    .from("notas_informativas")
-    .select("*, expedientes(*)")
-    .order("fecha_falta", { ascending: false });
-  if (error) { console.error(error); toast("No se pudieron cargar los expedientes: " + (error.message || "error de red o de sesión") + ". Intente recargar la página."); return; }
+  return cargarNotasCompletas();
+}
+const cargarNotasCompletas = cargaCompartida(async () => {
+  const usuario = state.session?.user?.id;
+  let data;
+  try {
+    data = await leerTodasLasPaginas(() => supabase.from("notas_informativas")
+      .select("*, expedientes(*)").order("fecha_falta", { ascending: false }).order("id"));
+    if (!usuario || usuario !== state.session?.user?.id) return false;
+    if (!await cargarRemisiones()) return false;
+  } catch (error) {
+    toast("No se pudieron actualizar los expedientes. Compruebe su conexión y vuelva a intentar.");
+    return false;
+  }
+  if (usuario !== state.session?.user?.id) return false;
   // La política de RLS "ve notas propias o es admin" ya filtra en el
   // servidor qué filas puede ver este usuario (por oficial_constato_cip);
   // el navegador nunca recibe las que no le corresponden, así que aquí ya
   // no hace falta (ni conviene) repetir el filtro en JavaScript.
   state.notas = data || [];
-  await cargarRemisiones();
   renderResumenRapidoNotas();
   renderBandejaAccionesNotas();
   // Inicio (Expedientes): solo lo pendiente. Seguimiento: solo lo resuelto.
@@ -885,7 +931,8 @@ async function loadNotas() {
     "No hay expedientes pendientes. Los resueltos están en la pestaña «Seguimiento».",
   );
   aplicarFiltrosNotas();
-}
+  return true;
+});
 
 let notasVisibles = [];
 
@@ -1074,18 +1121,27 @@ function etiquetaEstadoRecepcion(estado) {
 }
 
 async function cargarRemisiones() {
-  const { data, error } = await supabase.from("expedientes_remitidos")
-    .select("nota_id, archivo_oficio_path, archivo_ht_path");
-  // Un fallo aquí no puede tumbar la lista de casos: sin estos datos el estado
-  // dirá que falta el oficio, que es lo que se ve antes de remitir.
-  if (error) { console.error("No se pudo leer el estado de remisión:", error); return; }
-  state.remisiones = data || [];
+  const usuario = state.session?.user?.id;
+  try {
+    const data = await leerTodasLasPaginas(() => supabase.from("expedientes_remitidos")
+      .select("id, nota_id, archivo_oficio_path, archivo_ht_path").order("id"));
+    if (!usuario || usuario !== state.session?.user?.id) return false;
+    state.remisiones = data; return true;
+  } catch (error) {
+    // No afirmar que falta un oficio cuando simplemente falló la consulta.
+    toast("No se pudo verificar la remisión. Los datos no se han actualizado; vuelva a intentar.");
+    return false;
+  }
 }
 
 async function loadExpedientesRemitidos() {
-  const { data, error } = await supabase
-    .from("expedientes_remitidos").select("*").order("remitido_at", { ascending: false });
-  if (error) { console.error(error); toast("No se pudo cargar la recepción: " + error.message); return; }
+  const usuario = state.session?.user?.id;
+  let data;
+  try {
+    data = await leerTodasLasPaginas(() => supabase.from("expedientes_remitidos")
+      .select("*").order("remitido_at", { ascending: false }).order("id"));
+  } catch (error) { toast("No se pudo actualizar la recepción. Vuelva a intentar."); return false; }
+  if (!usuario || usuario !== state.session?.user?.id) return false;
   state.expedientesRemitidos = data || [];
   state.remisiones = data || [];
   await cargarEstadoRespaldoDrive();
@@ -2906,13 +2962,18 @@ async function submitExpediente(e, notaId) {
 
 // ---------- Efectivos ----------
 async function loadEfectivos() {
-  const { data, error } = await supabase
-    .from("efectivos")
-    .select("*")
-    .order("apellidos_nombres", { ascending: true });
-  if (error) { console.error(error); toast("No se pudo cargar el padrón de Efectivos: " + (error.message || "error de red") + ". Los documentos podrían no completar CIP/DNI."); return; }
+  const usuario = state.session?.user?.id;
+  let data;
+  try {
+    data = await leerTodasLasPaginas(() => supabase.from("efectivos")
+      .select("*").order("apellidos_nombres", { ascending: true }).order("id"));
+  } catch (error) {
+    toast("No se pudo actualizar el padrón. Compruebe su conexión antes de generar documentos."); return false;
+  }
+  if (!usuario || usuario !== state.session?.user?.id) return false;
   state.efectivos = data || [];
   renderEfectivosTable(state.efectivos);
+  return true;
 }
 
 function renderEfectivosTable(list) {
@@ -5091,6 +5152,7 @@ $("asistenteForm")?.addEventListener("submit", async (e) => {
 
 // ---------- Panel de métricas ----------
 let chartsPanel = {};
+let revisionPanel = 0;
 
 // Mismas etapas que ya se muestran en el detalle de cada nota (Acta de No
 // Descargo / Orden de Sanción), resumidas en una sola categoría por caso
@@ -5518,6 +5580,7 @@ function cargarChart() {
 }
 
 async function renderPanel() {
+  const revision = ++revisionPanel;
   const notas = state.notas;
   $("panelEmpty").classList.toggle("hidden", notas.length > 0);
   $("panelContenido").classList.toggle("hidden", notas.length === 0);
@@ -5528,6 +5591,7 @@ async function renderPanel() {
   let Chart;
   try {
     Chart = await cargarChart();
+    if (revision !== revisionPanel) return;
   } catch (err) {
     console.error(err); toast("No se pudieron cargar los gráficos. Revise la conexión."); return;
   }
@@ -5730,8 +5794,15 @@ function formatearHorasFalto(nota) {
 // ---------------------------------------------------------------------------
 
 let expedientesLoteFilas = [];
+let expedientesLoteOcupado = false;
+function ocuparExpedientesLote(ocupado) {
+  expedientesLoteOcupado = ocupado;
+  for (const id of ["xlArchivo", "btnGuardarExpLote", "btnCerrarModalExpLote", "btnCancelarExpLote", "btnExpedientesLote"])
+    if ($(id)) $(id).disabled = ocupado;
+}
 
 $("btnExpedientesLote")?.addEventListener("click", () => {
+  if (expedientesLoteOcupado) return;
   $("xlArchivo").value = "";
   $("xlStatus").classList.add("hidden");
   $("xlError").classList.add("hidden");
@@ -5741,7 +5812,9 @@ $("btnExpedientesLote")?.addEventListener("click", () => {
 });
 $("btnCerrarModalExpLote")?.addEventListener("click", cerrarExpedientesLote);
 $("btnCancelarExpLote")?.addEventListener("click", cerrarExpedientesLote);
-function cerrarExpedientesLote() { $("modalExpedientesLote").classList.add("hidden"); }
+function cerrarExpedientesLote() {
+  if (!expedientesLoteOcupado) $("modalExpedientesLote").classList.add("hidden");
+}
 
 /**
  * Casos que ya tienen un expediente guardado: al confirmar se reemplazaría.
@@ -5753,6 +5826,7 @@ function notasQueYaTienenExpediente() {
 }
 
 $("xlArchivo")?.addEventListener("change", async (e) => {
+  if (expedientesLoteOcupado) return;
   const archivos = [...e.target.files].filter((f) => f.type === "application/pdf");
   const statusEl = $("xlStatus");
   const errEl = $("xlError");
@@ -5760,8 +5834,11 @@ $("xlArchivo")?.addEventListener("change", async (e) => {
   expedientesLoteFilas = [];
   renderExpedientesLote();
   if (!archivos.length) { statusEl.classList.add("hidden"); return; }
+  ocuparExpedientesLote(true);
   statusEl.classList.remove("hidden");
   try {
+    // Antes del OCR, obtener los casos actuales (incluidos los que llegaron de la APK).
+    if (!await loadEfectivos() || !await loadNotas()) throw new Error("No se pudieron actualizar los casos. Vuelva a intentar.");
     const leidos = [];
     for (const file of archivos) {
       statusEl.textContent = `${file.name}: leyendo...`;
@@ -5786,7 +5863,7 @@ $("xlArchivo")?.addEventListener("change", async (e) => {
     statusEl.classList.add("hidden");
     errEl.textContent = "No se pudieron leer los archivos: " + (err.message || err);
     errEl.classList.remove("hidden");
-  }
+  } finally { ocuparExpedientesLote(false); }
 });
 
 /**
@@ -5892,6 +5969,7 @@ function renderExpedientesLote() {
 }
 
 $("btnGuardarExpLote")?.addEventListener("click", async (e) => {
+  if (expedientesLoteOcupado) return;
   const btn = e.currentTarget;
   const statusEl = $("xlStatus");
   const errEl = $("xlError");
@@ -5904,6 +5982,7 @@ $("btnGuardarExpLote")?.addEventListener("click", async (e) => {
     return;
   }
 
+  ocuparExpedientesLote(true);
   ocuparBoton(btn, true, "Archivando...");
   statusEl.classList.remove("hidden");
   const fallos = [];
@@ -5937,22 +6016,27 @@ $("btnGuardarExpLote")?.addEventListener("click", async (e) => {
           await supabase.storage.from("notas").remove([anterior]);
         }
         guardados++;
+        // Un reintento de un lote parcialmente fallido no vuelve a subir los éxitos.
+        fila.guardada = true; fila.confirmada = false;
       } catch (err) {
         console.error(`No se pudo archivar el expediente de ${fila.nombreSugerido}:`, err);
         fallos.push(`${fila.archivo} (páginas ${fila.desde}–${fila.hasta}): ${err.message || err}`);
       }
     }
 
+    expedientesLoteFilas = expedientesLoteFilas.filter((f) => !f.guardada);
+    renderExpedientesLote();
     await loadNotas();
     if (fallos.length) {
       statusEl.textContent = `Se archivaron ${guardados} de ${aGuardar.length}.`;
       errEl.innerHTML = `No se pudieron archivar ${fallos.length}:<br>${fallos.map(escapeHtml).join("<br>")}`;
       errEl.classList.remove("hidden");
     } else {
-      cerrarExpedientesLote();
+      $("modalExpedientesLote").classList.add("hidden");
       toast(`Se archivaron ${guardados} expediente(s).`);
     }
   } finally {
+    ocuparExpedientesLote(false);
     ocuparBoton(btn, false);
   }
 });
