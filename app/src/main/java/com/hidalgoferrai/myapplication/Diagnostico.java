@@ -30,8 +30,12 @@ public final class Diagnostico {
     private Diagnostico() {
     }
 
+    /**
+     * Almacenamiento interno de la aplicación: ninguna otra app puede leerlo. El externo
+     * (Android/data) es legible por otras apps con permiso de almacenamiento en Android 7–10.
+     */
     public static File archivo(Context contexto) {
-        return new File(contexto.getExternalFilesDir(null), ARCHIVO);
+        return new File(contexto.getFilesDir(), ARCHIVO);
     }
 
     /** Anota un paso. El texto debe ser corto y sin datos personales ni secretos. */
@@ -51,6 +55,11 @@ public final class Diagnostico {
      */
     public static void instalar(Context contexto) {
         final Context app = contexto.getApplicationContext();
+        // Las versiones 1.7 iniciales lo escribían en el almacenamiento externo.
+        try {
+            File externo = app.getExternalFilesDir(null);
+            if (externo != null) new File(externo, ARCHIVO).delete();
+        } catch (SecurityException ignorado) { /* Nada que limpiar. */ }
         final Thread.UncaughtExceptionHandler anterior = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((hilo, error) -> {
             try {

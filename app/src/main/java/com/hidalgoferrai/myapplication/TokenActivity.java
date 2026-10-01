@@ -42,6 +42,13 @@ public class TokenActivity extends AppCompatActivity {
     public static final String EXTRA_USUARIO_ID = "usuario_id";
     public static final String EXTRA_SESION = "sesion";
 
+    // Lo mínimo para retomar una activación si Android recrea la pantalla mientras la
+    // persona está en su app de códigos (giro, tema, falta de memoria). La clave NO se
+    // guarda: la app de códigos ya la tiene y para verificar basta el id del factor.
+    private static final String ESTADO_ACTIVANDO = "activando";
+    private static final String ESTADO_FACTOR = "factor";
+    private static final String ESTADO_ANTERIOR = "factor_anterior";
+
     private static final String PLAY_AUTENTICADOR =
             "https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2";
 
@@ -115,7 +122,22 @@ public class TokenActivity extends AppCompatActivity {
         });
         secretoLocal = AlmacenSeguro.secreto(this, usuarioId);
         factorId = AlmacenSeguro.factorId(this, usuarioId);
-        preparar();
+        if (savedInstanceState != null && savedInstanceState.getBoolean(ESTADO_ACTIVANDO)
+                && savedInstanceState.getString(ESTADO_FACTOR) != null) {
+            // Volvió de la app de códigos y la pantalla se había recreado: sin esto
+            // aparecería «Activar» otra vez y un segundo factor dejaría inútil el primero.
+            activando = true;
+            factorId = savedInstanceState.getString(ESTADO_FACTOR);
+            factorAnterior = savedInstanceState.getString(ESTADO_ANTERIOR);
+            mostrarActivando();
+        } else preparar();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle salida) {
+        super.onSaveInstanceState(salida);
+        salida.putBoolean(ESTADO_ACTIVANDO, activando);
+        salida.putString(ESTADO_FACTOR, activando ? factorId : null);
+        salida.putString(ESTADO_ANTERIOR, factorAnterior);
     }
 
     @Override protected void onDestroy() {
@@ -177,9 +199,24 @@ public class TokenActivity extends AppCompatActivity {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.token_autenticador_titulo)
                 .setMessage(R.string.token_autenticador_pasos)
-                .setNegativeButton(R.string.eliminar_cancelar, null)
+                .setNegativeButton(R.string.eliminar_cancelar, (d, b) -> activacionDescartada())
+                .setOnCancelListener(d -> activacionDescartada())
                 .setPositiveButton(R.string.token_autenticador_entendido, (d, b) -> crearFactor())
                 .show();
+    }
+
+    /**
+     * Cerró el aviso sin empezar. Tras una mudanza o un código de recuperación la
+     * pantalla quedaba con el botón apagado y sin salida; aquí siempre hay una.
+     */
+    private void activacionDescartada() {
+        if (factorAnterior != null) {
+            // Mudanza aplazada: conserva su token y entra con la sesión ya verificada.
+            factorId = factorAnterior;
+            factorAnterior = null;
+            android.widget.Toast.makeText(this, R.string.token_mudanza_pendiente, android.widget.Toast.LENGTH_LONG).show();
+            if (modoIngreso && sesionVerificada) irAlInicio(); else finish();
+        } else mostrarPorActivar();
     }
 
     private void crearFactor() {
@@ -187,6 +224,17 @@ public class TokenActivity extends AppCompatActivity {
         hilo.execute(() -> {
             try {
                 renovarSesion();
+                // Un intento abandonado (pantalla cerrada, teléfono sin batería) deja un
+                // factor sin verificar; se retira antes de crear el nuevo.
+                JSONArray previos = SupabaseApi.factores(token);
+                for (int i = 0; i < previos.length(); i++) {
+                    JSONObject f = previos.getJSONObject(i);
+                    if ("totp".equals(f.optString("factor_type"))
+                            && !"verified".equals(f.optString("status"))) {
+                        try { SupabaseApi.eliminarFactor(token, f.getString("id")); }
+                        catch (java.io.IOException ignorado) { /* No impide crear el nuevo. */ }
+                    }
+                }
                 JSONObject creado = SupabaseApi.crearToken(token,
                         "Faltos · " + UUID.randomUUID().toString().substring(0, 8));
                 factorId = creado.getString("id");
@@ -239,7 +287,6 @@ public class TokenActivity extends AppCompatActivity {
         if (portapapeles == null) return;
         ClipData dato = ClipData.newPlainText(getString(R.string.token_clave_manual), secretoNuevo);
         // Marca del sistema para que el portapapeles no muestre la clave en vistas previas.
-        dato.getDescription().getExtras();
         android.os.PersistableBundle extras = new android.os.PersistableBundle();
         extras.putBoolean("android.content.extra.IS_SENSITIVE", true);
         dato.getDescription().setExtras(extras);
@@ -259,6 +306,7 @@ public class TokenActivity extends AppCompatActivity {
     /** Si abandona a medias, el factor sin verificar se retira: no se deja basura en la cuenta. */
     private void cancelarActivacion() {
         final String aRetirar = factorId;
+        final boolean eraMudanza = factorAnterior != null;
         activando = false;
         factorId = factorAnterior;
         factorAnterior = null;
@@ -272,7 +320,8 @@ public class TokenActivity extends AppCompatActivity {
             publicar(() -> {
                 detenerCarga();
                 android.widget.Toast.makeText(this, R.string.token_activacion_cancelada, android.widget.Toast.LENGTH_LONG).show();
-                finish();
+                // Quien aplaza la mudanza ya entró con su token de siempre.
+                if (eraMudanza && modoIngreso && sesionVerificada) irAlInicio(); else finish();
             });
         });
     }
@@ -503,7 +552,8 @@ public class TokenActivity extends AppCompatActivity {
         layoutCodigo.setVisibility(View.VISIBLE);
         btnAutenticador.setText(R.string.token_abrir_autenticador);
         btnAutenticador.setOnClickListener(v -> abrirAutenticador());
-        btnAutenticador.setVisibility(View.VISIBLE);
+        boolean puedeAbrir = (uriNueva != null && !uriNueva.isEmpty()) || secretoNuevo != null;
+        btnAutenticador.setVisibility(puedeAbrir ? View.VISIBLE : View.GONE);
         btnCopiarClave.setVisibility(View.GONE);
         btnEntrar.setText(R.string.token_continuar);
         btnEntrar.setVisibility(View.VISIBLE);

@@ -556,6 +556,41 @@ public class FlujoAccesoTest {
     }
 
     /**
+     * Si Android recrea la pantalla mientras la persona está en su app de códigos
+     * (giro, tema, memoria), al volver sigue pidiendo el código del MISMO factor:
+     * no reaparece «Activar» ni se inscribe un segundo token que inutilice el primero.
+     */
+    @Test public void recrearDuranteLaActivacionConservaElFactor() throws Exception {
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
+            activarConAppDeCodigos();
+            escenario.recreate();
+            esperarVisible(R.id.etCodigoExterno);
+            assertEquals("No se inscribe otro token", 1, altas.get());
+            onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
+            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
+            esperarTexto(R.id.tvCodigos, "ABCDE-FGHIJ");
+            assertEquals(1, altas.get());
+        }
+    }
+
+    /** Cerrar el aviso de activación tras un código de respaldo no deja la pantalla sin salida. */
+    @Test public void cancelarElAvisoTrasRecuperarDejaActivarDeNuevo() throws Exception {
+        factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "ESCRIBA SU CÓDIGO");
+            onView(withId(R.id.btnPerdiTelefono)).perform(scrollTo(), click());
+            onView(withId(R.id.etCodigoRecuperacion)).inRoot(isDialog())
+                    .perform(replaceText("ABCDE-FGHIJ"));
+            onView(withText(R.string.recuperar_boton)).inRoot(isDialog()).perform(click());
+            onView(withText(R.string.eliminar_cancelar)).inRoot(isDialog()).perform(click());
+            esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
+            escenario.onActivity(a -> assertTrue(a.findViewById(R.id.btnEntrar).isEnabled()));
+            assertEquals(0, altas.get());
+        }
+    }
+
+    /**
      * Pasos comunes: pulsar «Activar», aceptar las instrucciones y esperar a que la
      * pantalla pida el código. Se espera por el botón de la app de códigos porque
      * está a la vista tanto si hay autenticador instalado como si no.

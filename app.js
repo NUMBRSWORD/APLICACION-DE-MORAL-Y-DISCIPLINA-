@@ -410,6 +410,8 @@ $("btnTemaToggle").addEventListener("click", () => {
 
 // ---------- View switching ----------
 function showView(id) {
+  // «Volver» desde un expediente regresa a Subir expediente solo si se abrió desde ahí.
+  if (id !== "view-nota-detail") state.origenDetalle = null;
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
   $(id).classList.remove("hidden");
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
@@ -742,7 +744,11 @@ supabase.auth.onAuthStateChange((_event, session) => {
   // manda a "Expedientes" y recarga todo: quien estaba en Seguimiento, en un
   // expediente o con una ficha abierta era devuelto al inicio sin haber hecho nada.
   // Si esa persona ya está dentro de la app, solo se actualiza el token.
-  const yaEnLaApp = state.session?.user?.id === session.user.id && !$("topbar").classList.contains("hidden");
+  const mismaPersona = state.session?.user?.id === session.user.id;
+  // En las políticas la barra está oculta, pero repetir onAuthed borraría lo que
+  // la persona ya escribió para firmar.
+  const yaEnLaApp = mismaPersona && (!$("topbar").classList.contains("hidden")
+    || !$("view-politicas").classList.contains("hidden"));
   if (yaEnLaApp) { state.session = session; return; }
   onAuthed(session);
 });
@@ -5243,7 +5249,11 @@ async function abrirActivarToken() {
     const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: `Web ${new Date().toISOString()}` });
     if (error) throw error;
     state.tokenNuevoId = data.id;
-    $("tokenQrImagen").src = data.totp.qr_code;
+    const qr = String(data.totp.qr_code || "");
+    const svg = qr.startsWith("data:") ? qr.slice(qr.indexOf(",") + 1) : qr;
+    $("tokenQrImagen").src = svg.trim().startsWith("<")
+      ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg)
+      : qr;
     $("tokenSecreto").textContent = data.totp.secret;
     $("tokenNuevoCodigo").focus();
   } catch (err) {
@@ -5317,6 +5327,9 @@ $("btnConfirmarToken").addEventListener("click", async (e) => {
 
 // Recuperación: un código de un solo uso quita el token perdido (el servidor
 // limita los intentos) y la persona vuelve a activar uno nuevo.
+$("tokenRecuperacionCodigo").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("tokenRecuperacionUsar").click(); }
+});
 $("tokenPerdido").addEventListener("click", () => {
   $("tokenRecuperacion").classList.toggle("hidden");
   $("tokenRecuperacionCodigo").focus();

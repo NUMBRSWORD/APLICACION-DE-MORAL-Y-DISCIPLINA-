@@ -132,7 +132,7 @@
     <string name="token_mudanza_mensaje">Hasta ahora esta aplicación generaba su código. A partir de esta versión lo guarda una app de códigos, como Google Authenticator, que tiene respaldo en la nube: si pierde el celular, sus códigos vuelven solos en el nuevo.\n\nVa a activarlo ahora. El token anterior seguirá sirviendo hasta que el nuevo quede verificado.</string>
     <string name="token_mudanza_continuar">Pasarlo a mi app de códigos</string>
     <string name="token_mudanza_despues">Ahora no</string>
-    <string name="token_mudanza_pendiente">Su token sigue en esta aplicación. Podrá pasarlo a su app de códigos cuando quiera, desde «Mi Token Digital».</string>
+    <string name="token_mudanza_pendiente">Su token sigue en esta aplicación y se le volverá a ofrecer pasarlo la próxima vez que entre. Mientras tanto no podrá entrar a la web, porque allí se pide el código de su app de códigos.</string>
 
     <!-- Hoja «Mi Token Digital» del inicio: ya no muestra códigos. -->
     <string name="token_inferior_activo">Su Token Digital está activo y lo guarda su app de códigos.</string>
