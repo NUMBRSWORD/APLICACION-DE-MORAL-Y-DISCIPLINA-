@@ -470,6 +470,20 @@ public class ModulosTest {
             s.onActivity(a->assertEquals(View.GONE,a.findViewById(R.id.progreso).getVisibility()));
         }
     }
+    @Test public void falloDeActualizacionNoTapaUnModuloYaAbierto() throws Exception {
+        actualizacionesPrueba();
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("panel"))){
+            esperar(R.id.webView,null);
+            js(s,"updatesQa.reload().then(value=>updatesQa.reloadResult=value)");
+            esperarJs(s,"updatesQa.reloadResult===true");
+            js(s,"updatesQa.failNotes=true;updatesQa.reload().catch(()=>updatesQa.reloadFailed=true)");
+            esperarJs(s,"updatesQa.reloadFailed===true");
+            s.onActivity(a->{
+                assertEquals(View.GONE,a.findViewById(R.id.cargaModulo).getVisibility());
+                assertEquals(View.VISIBLE,a.findViewById(R.id.webView).getVisibility());
+            });
+        }
+    }
     private void esperarJs(ActivityScenario<WebActivity> s,String condicion) throws Exception {
         long limite=System.currentTimeMillis()+12000;
         do {if("true".equals(js(s,condicion)))return;Thread.sleep(80);}while(System.currentTimeMillis()<limite);

@@ -36,4 +36,5 @@ onAuthed=async function(s){
   await loadProfile(s.user.id);showView('view-dashboard');loadNotas();
 };
 uq.currentCip=()=>state.cip;
+uq.reload=()=>loadNotas();
 uq.resume=()=>{uq.pending=false;uq.token=false;document.getElementById('modalCambiarClave').classList.add('hidden');document.getElementById('view-token').classList.add('hidden');return onAuthed(session);};

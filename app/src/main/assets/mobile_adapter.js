@@ -121,7 +121,9 @@
         if(result===false||(result!==true&&state.notas===previous))throw new Error('notes');
         return result ?? true;
       });
-      notesPromise.catch(()=>post('error'));return notesPromise;
+      // Tras abrir un módulo, sus formularios conservan el error y el reintento.
+      // Un refresco fallido no debe tapar un PDF o una apelación ya preparados.
+      notesPromise.catch(()=>{if(!opened)post('error');});return notesPromise;
     };
   }
   window.addEventListener('faltos-theme-change',()=>{

@@ -101,6 +101,8 @@
     .view, .view-header > *, .modal-body, .detail-card, .native-case,
     .multi-efectivo-row > .value { min-width:0; overflow-wrap:anywhere; }
     .view-actions > button, .native-case button { white-space:normal; max-width:100%; }
+    .grid-2, .grid-3, .detail-grid { min-width:0; }
+    .grid-2 > *, .grid-3 > *, .detail-grid > * { min-width:0; }
     .modal-header h3 { min-width:0; overflow-wrap:anywhere; }
     .modal-header > button { flex-shrink:0; }
     input[type=file] { max-width:100%; min-width:0; }
