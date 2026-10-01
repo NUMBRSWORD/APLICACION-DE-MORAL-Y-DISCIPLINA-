@@ -68,25 +68,25 @@ de registro no se presenta como éxito.
 ## Probado de extremo a extremo el 30/09/2026
 
 La cadena completa quedó comprobada en un teléfono real, con la variante QA
-(«Faltos QA», ), que usa el mismo proyecto Supabase:
+(«Faltos QA», `com.hidalgoferrai.faltos.qa`), que usa el mismo proyecto Supabase:
 
 | Eslabón | Cómo se comprobó |
 |---|---|
 | Credencial FCM en el servidor | la función obtuvo su token de acceso y FCM aceptó el mensaje (200) |
-| Registro del teléfono | una fila en , a los segundos de activar |
-| Envío dirigido | solo al teléfono de esa cuenta, exigiendo  explícito |
+| Registro del teléfono | una fila en `dispositivos_android`, a los segundos de activar |
+| Envío dirigido | solo al teléfono de esa cuenta, exigiendo `usuarioPrueba` explícito |
 | Entrega con la app abierta | confirmada por el responsable |
 | **Entrega con la app cerrada** | confirmada: cerrada del todo y pantalla bloqueada |
 
 Tres envíos a las 21:41, 21:42 y 21:43 (hora de Lima); los tres llegaron.
 
-Detalle para no equivocarse después: el cron está en , que es **UTC**
+Detalle para no equivocarse después: el cron está en `5 13 * * *`, que es **UTC**
 y equivale a las **8:05 de la mañana en Lima**. Si alguna vez se cambia desde el
 panel, hay que seguir escribiéndolo en UTC o los avisos saldrán de madrugada.
 
 ## Lo que falta
 
-La clave  está escrita **en claro dentro del comando del
-cron** (), no en Vault, y su valor es adivinable: lleva el
+La clave `AVISOS_CRON_SECRET` está escrita **en claro dentro del comando del
+cron** (`cron.job.command`), no en Vault, y su valor es adivinable: lleva el
 nombre del proyecto y una fecha. Es lo único que protege la función de envío.
 Conviene rotarla por una frase aleatoria.
