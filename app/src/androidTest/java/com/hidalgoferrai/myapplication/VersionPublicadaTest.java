@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeNoException;
+import static org.junit.Assume.assumeTrue;
 
 /**
  * La aplicación se reparte por archivo APK y avisa de versiones nuevas comparándose con
@@ -37,6 +38,10 @@ public class VersionPublicadaTest {
             "https://numbrsword.github.io/moral-y-disciplina/descargas/version.json";
 
     @Test public void elArchivoDeVersionPublicadoCoincideConLaAppCompilada() throws Exception {
+        // Una candidata debe poder probarse ANTES de publicarla. La verificación
+        // contra producción se habilita explícitamente después del despliegue.
+        assumeTrue("Verificación de producción: habilitar -e verificarPublicacion true",
+                "true".equals(InstrumentationRegistry.getArguments().getString("verificarPublicacion")));
         Context contexto = InstrumentationRegistry.getInstrumentation().getTargetContext();
         JSONObject publicado;
         try {

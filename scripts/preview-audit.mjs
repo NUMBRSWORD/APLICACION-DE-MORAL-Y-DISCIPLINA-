@@ -3,7 +3,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-const root=path.resolve('app/build/upstream-github');
+const root=path.resolve('.');
 const mock=new URL('../tests/fixtures/supabase-preview.mjs',import.meta.url);
 http.createServer(async(req,res)=>{
   try {

@@ -2,6 +2,8 @@
 
 Rama: `combinado` (une la app Android con el repositorio web `moral-y-disciplina`).
 
+Actualización posterior: las correcciones y el APK firmado 1.6 se documentan en `docs/correcciones-1.6.md`. Los datos de Supabase indicados abajo son una comprobación histórica, no una certificación del estado actual.
+
 ## Ya hecho
 
 **En el código (esta rama)**
@@ -28,7 +30,7 @@ Rama: `combinado` (une la app Android con el repositorio web `moral-y-disciplina
    muestra la tarjeta de avisos).
 3. Compilar: Android Studio → Build → Generate App Bundles or APKs → Generate APKs
    (o `gradlew assembleDebug`). El APK queda en `app/build/outputs/apk/debug/`.
-4. Desinstalar la app anterior del teléfono (la firma de depuración es distinta) e instalar el APK.
+4. Para uso real, instalar `descargas/faltos-1.6.apk` encima de la versión anterior: conserva la firma de distribución. **No desinstalar para resolver un error de firma**, porque puede perderse el token local. Usar la variante QA para pruebas separadas.
 5. Entrar con cuenta y token; en el inicio pulsar **Activar** en la tarjeta de avisos y aceptar
    el permiso de notificaciones.
 6. Comprobar que el teléfono quedó registrado: en Supabase, tabla `dispositivos_android` debe
@@ -44,8 +46,8 @@ Rama: `combinado` (une la app Android con el repositorio web `moral-y-disciplina
   repositorio. Esta rama vive en `APLICACION-DE-MORAL-Y-DISCIPLINA-`.
 - **Pull request** de `combinado` a `main` en `APLICACION-DE-MORAL-Y-DISCIPLINA-`, si se quiere
   dejarla como principal.
-- Cuatro pruebas de `tests/` (`*-db.test.mjs` y el contrato de GitHub) fallan en una computadora
-  sin la base de datos de prueba local; ya fallaban antes de estos cambios.
+- Las pruebas se preparan ahora con `npm ci --ignore-scripts` y se ejecutan con `npm test`.
+  La base de datos es aislada en memoria y el contrato usa la web de este mismo checkout.
 
 ## Datos que NO están en el repositorio (por ser público)
 

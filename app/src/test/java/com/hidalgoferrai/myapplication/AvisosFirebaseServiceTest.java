@@ -14,6 +14,8 @@ public class AvisosFirebaseServiceTest {
                 AvisosFirebaseService.textoParaTipo("pasos_pendientes"));
         assertEquals(R.string.aviso_documento_recibido,
                 AvisosFirebaseService.textoParaTipo("documento_recibido"));
+        assertEquals(R.string.aviso_documentos_por_recibir,
+                AvisosFirebaseService.textoParaTipo("documentos_por_recibir"));
         assertEquals(0, AvisosFirebaseService.textoParaTipo("mensaje_libre"));
         assertEquals(0, AvisosFirebaseService.textoParaTipo(null));
         assertEquals(R.string.aviso_prueba, AvisosFirebaseService.textoParaTipo("prueba"));

@@ -1,7 +1,7 @@
 // PostgreSQL real en memoria (PGlite); sin red, cuentas ni datos de producción.
-// npm install --prefix app/build/sql-qa --no-save --package-lock=false --ignore-scripts @electric-sql/pglite
+// npm ci --ignore-scripts
 // node tests/recepcion-db.test.mjs
-import {PGlite} from '../app/build/sql-qa/node_modules/@electric-sql/pglite/dist/index.js';
+import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const db=new PGlite();
