@@ -24,6 +24,7 @@ const rejected=async(sql,args=[],code='42501')=>assert.rejects(db.query(sql,args
 try {
   await db.exec(`
     create role anon;create role authenticated;
+    create function public.lima_date() returns date language sql stable as $$select (now() at time zone 'America/Lima')::date$$;
     create schema auth;create schema storage;
     grant usage on schema public,auth,storage to authenticated,anon;
     create table auth.users(id uuid primary key);
@@ -81,7 +82,7 @@ try {
   await check('lectura de cargo únicamente para nota autorizada',async()=>{
     await login(owner);assert.equal((await one('select count(*)::int c from public.recepciones_fisicas')).c,1);
     await login(other);assert.equal((await one('select count(*)::int c from public.recepciones_fisicas')).c,0);
-    await rejected('select public.presentar_apelacion_expediente($1,current_date,$2,$3)',[note,'ajeno.pdf','ajeno.pdf']);
+    await rejected('select public.presentar_apelacion_expediente($1,lima_date(),$2,$3)',[note,'ajeno.pdf','ajeno.pdf']);
   });
   await check('sin aprobación o sin MFA no hay lectura ni confirmación',async()=>{
     await login(blocked);await rejected('select public.confirmar_recepcion_fisica($1,true)',[note]);
@@ -101,20 +102,20 @@ try {
   });
   let appeal;
   await check('apelación firmada usa fecha de notificación y no modifica recepción',async()=>{
-    appeal=(await one('select public.presentar_apelacion_expediente($1,current_date,$2,$3) r',[note,path,'recurso.pdf'])).r;
+    appeal=(await one('select public.presentar_apelacion_expediente($1,lima_date(),$2,$3) r',[note,path,'recurso.pdf'])).r;
     assert.equal(appeal.fecha_notificacion,'2020-01-02');assert.equal(appeal.presentada_por,owner);
     assert.equal((await one('select count(*)::int c from storage.objects')).c,1);
     assert.deepEqual((await one('select to_jsonb(r) r from public.recepciones_fisicas r')).r,receipt);
-    const duplicate=(await one('select public.presentar_apelacion_expediente($1,current_date,$2,$3) r',[note,path,'duplicado.pdf'])).r;
+    const duplicate=(await one('select public.presentar_apelacion_expediente($1,lima_date(),$2,$3) r',[note,path,'duplicado.pdf'])).r;
     assert.deepEqual(duplicate,appeal);
     await rejected("delete from public.apelaciones_expediente");
   });
   await check('apelación admite registro antes de subir expediente y exige PDF guardado',async()=>{
-    await rejected('select public.presentar_apelacion_expediente($1,current_date,$2,$3)',[pending,`${owner}/${pending}/inexistente.pdf`,'inexistente.pdf'],'22023');
+    await rejected('select public.presentar_apelacion_expediente($1,lima_date(),$2,$3)',[pending,`${owner}/${pending}/inexistente.pdf`,'inexistente.pdf'],'22023');
     const pendingPath=`${owner}/${pending}/recurso.pdf`;
     await db.query("insert into storage.objects values('apelaciones-expediente',$1)",[pendingPath]);
-    await rejected("select public.presentar_apelacion_expediente($1,current_date+1,$2,$3)",[pending,pendingPath,'recurso.pdf'],'22023');
-    await db.query('select public.presentar_apelacion_expediente($1,current_date,$2,$3)',[pending,pendingPath,'recurso.pdf']);
+    await rejected("select public.presentar_apelacion_expediente($1,lima_date()+1,$2,$3)",[pending,pendingPath,'recurso.pdf'],'22023');
+    await db.query('select public.presentar_apelacion_expediente($1,lima_date(),$2,$3)',[pending,pendingPath,'recurso.pdf']);
     assert.equal((await one('select count(*)::int c from public.apelaciones_expediente')).c,2);
     assert.equal((await one('select count(*)::int c from public.recepciones_fisicas')).c,1);
   });
