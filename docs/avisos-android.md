@@ -84,9 +84,23 @@ Detalle para no equivocarse después: el cron está en `5 13 * * *`, que es **UT
 y equivale a las **8:05 de la mañana en Lima**. Si alguna vez se cambia desde el
 panel, hay que seguir escribiéndolo en UTC o los avisos saldrán de madrugada.
 
-## Lo que falta
+## La clave del cron, rotada el 30/09/2026
 
-La clave `AVISOS_CRON_SECRET` está escrita **en claro dentro del comando del
-cron** (`cron.job.command`), no en Vault, y su valor es adivinable: lleva el
-nombre del proyecto y una fecha. Es lo único que protege la función de envío.
-Conviene rotarla por una frase aleatoria.
+Estaba escrita en claro dentro de `cron.job.command` y era adivinable: llevaba
+el nombre del proyecto y una fecha. Es lo unico que protege la funcion de envio,
+asi que quien la leyera podia mandar avisos a los telefonos registrados.
+
+Lo que se hizo:
+
+| | Antes | Ahora |
+|---|---|---|
+| Donde vive | en claro en el comando del cron | cifrada en **Vault** (`avisos_cron_secret`) |
+| Como es | frase adivinable | 64 caracteres aleatorios (48 bytes) |
+| En el historial | aparecia en 3 ejecuciones | tachada; las 25 filas de historial se conservaron |
+
+El cron ya no la lleva dentro: la lee de Vault al ejecutarse. Comprobado que la
+nueva funciona (200) y que la anterior ya no (403).
+
+Para volver a rotarla: crear el secreto nuevo en Vault, leerlo UNA vez desde el
+SQL Editor y pegarlo en **Edge Functions -> Secrets** como `AVISOS_CRON_SECRET`.
+El valor nunca debe pasar por un chat ni quedar escrito en el cron.
