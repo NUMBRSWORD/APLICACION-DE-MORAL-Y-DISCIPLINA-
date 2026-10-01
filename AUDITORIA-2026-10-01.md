@@ -16,3 +16,11 @@
 
 ## No verificado
 - Compilación/lint/pruebas Android (sin SDK; descarga bloqueada). Cámara, escáner, avisos en teléfono real. Cumplimiento legal de retención de datos.
+
+## Actualización (misma fecha, sobre `main` con Faltos 1.6)
+- `npm test`: **405/405** pruebas correctas (web, lógica, PostgreSQL aislado, avisos, contrato).
+- Primer teléfono registrado en `dispositivos_android` (1). Tokens verificados: 2 de 13 cuentas.
+- Cron `avisos-android-0805` activo; la clave del cron fue rotada (commit `b9b10fb`).
+- Web: los datos dinámicos que se insertan con `innerHTML` pasan por `escapeHtml`; no se encontró inyección. No hay Content-Security-Policy.
+- Rendimiento: sin problemas al volumen actual (175 notas); solo avisos informativos de índices.
+- Sigue pendiente el hallazgo ALTO (MFA en servidor): aplicarlo cuando las 13 cuentas tengan token.
