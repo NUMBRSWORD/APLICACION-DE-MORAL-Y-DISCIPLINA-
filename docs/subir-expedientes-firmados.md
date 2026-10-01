@@ -231,8 +231,8 @@ equivocado es un error que no se descubre hasta mucho después.
    antigua; sin ninguno de los dos, se declara no resuelto en vez de adivinar.
 
 2. **El orden del nombre cambia dentro del mismo expediente.** En un caso real la
-   imputación decía «S3 PNP AYTHON JHON, Rodriguez Peramas» y el acta y la orden,
-   del mismo efectivo, «S3 PNP Rodriguez Peramas AYTHON JHON». Por eso el nombre
+   imputación decía «S3 PNP SALAZAR ORTEGA, Brayan Nicolas» y el acta y la orden,
+   del mismo efectivo, «S3 PNP Brayan Nicolas SALAZAR ORTEGA». Por eso el nombre
    no puede ser la llave principal y la comparación es por palabras sueltas, sin
    depender del orden. Es la razón de peso para usar el CIP.
 
