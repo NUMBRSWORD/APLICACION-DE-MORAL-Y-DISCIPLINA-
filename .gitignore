@@ -49,3 +49,7 @@ supabase/.branches/
 oficio/datos.json
 oficio/OFICIO_*.docx
 OFICIO_PLANTILLA_CASO_HIPOTETICO*.docx
+
+# Salida de "Generate Signed APK" de Android Studio: el APK que se publica
+# va a descargas/, y el mapping de R8 pesa 17 MB y se regenera en cada build.
+/app/release/
