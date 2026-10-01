@@ -38,3 +38,14 @@ Verificación antes/después como administrador real: 175 notas, 153 efectivos, 
 - Protección de contraseñas filtradas: interruptor en el panel de Supabase (Auth).
 - `pg_net` en `public`: la extensión no admite cambiar de esquema; solo reinstalándola, con riesgo para los cron.
 - MFA obligatoria en servidor: esperar a que las 13 cuentas tengan token (hoy 2) y aplicar `seguridad-mfa-aal2.sql`. Comprobado: una cuenta viewer con sesión AAL1 aún lee sus notas.
+
+## Cambios de la web para iPhone y celulares (01/10/2026)
+- Pestaña **Cumplimiento** solo para administradores.
+- **Políticas al entrar** en la web: igual que Android, no se continúa sin firmar todas en su versión vigente; un fallo de carga no cuenta como conformidad.
+- **Inicio sencillo** para usuarios en celular (pantalla ≤ 700 px): «Pasos pendientes» y «Subir expediente», como la app Android.
+- **Activar token desde la web** con QR (Google/Microsoft Authenticator o Contraseñas de iPhone) y 8 códigos de recuperación; en la pantalla del token, opción «Perdí mi celular» con código de recuperación.
+- Dentro de la app Android (`window.__faltosConfig`) nada de lo anterior se muestra: Android mantiene sus pantallas nativas.
+- Servidor (migración `20261001130000_firmas_solo_propias`): cada usuario ve solo su propia firma; el administrador ve todas. Verificado: admin 4 firmas, usuario 0 ajenas, firma propia visible tras firmar.
+- Cuentas dadas de baja: CIP 363060 y 375949 (rechazadas y con inicio de sesión bloqueado; sus notas se conservan).
+- Pruebas: `npm test` 405/405 y prueba en navegador (Chromium, 390 px) con Supabase simulado: 27/27.
+- Pendiente: sincronizar estos archivos al repositorio publicado `moral-y-disciplina` (`npm run sync:web`).

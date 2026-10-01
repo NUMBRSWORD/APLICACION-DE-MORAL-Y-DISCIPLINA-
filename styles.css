@@ -807,3 +807,36 @@ kbd {
   :is(#view-dashboard, #view-seguimiento) .row-actions .btn-secondary { flex: 1; min-height: 46px; }
   :is(#view-dashboard, #view-seguimiento) .row-chevron { display: none; }
 }
+
+/* ---------- Inicio sencillo en celular, políticas al entrar y token web ---------- */
+body.modo-sencillo .tabs { display: none; }
+body.modo-sencillo #btnPaletaBuscar { display: none; }
+.inicio-hero { margin: 8px 0 20px; }
+.inicio-hero h2 { margin: 4px 0 6px; }
+.inicio-accesos { display: grid; gap: 12px; }
+.inicio-acceso {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%;
+  text-align: left; padding: 20px; background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius); font: inherit; cursor: pointer;
+}
+.inicio-acceso strong { font-size: 1.1rem; }
+.inicio-acceso:hover, .inicio-acceso:focus-visible { border-color: var(--accent); }
+.inicio-aviso {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 16px; margin-bottom: 16px; border: 1px solid var(--accent); border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.inicio-aviso p { margin: 4px 0 0; }
+.subir-lista { display: grid; gap: 12px; margin-top: 12px; }
+.subir-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 0; padding: 16px; }
+.subir-item h3 { margin: 0 0 4px; font-size: 1rem; }
+.subir-item p { margin: 0; }
+.politicas-acciones { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0 24px; }
+.token-pasos { padding-left: 20px; }
+.token-pasos li { margin-bottom: 6px; }
+.token-qr { display: flex; justify-content: center; margin: 12px 0; }
+.token-qr img { width: 200px; height: 200px; background: #fff; padding: 8px; border-radius: 8px; }
+#tokenSecreto { overflow-wrap: anywhere; }
+.token-codigos { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-family: ui-monospace, monospace; }
+.token-codigos li { padding: 8px; border: 1px solid var(--border); border-radius: 8px; text-align: center; }
+#tokenRecuperacion { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }

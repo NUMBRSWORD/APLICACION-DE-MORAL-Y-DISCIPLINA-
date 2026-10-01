@@ -29,6 +29,9 @@ import { leerTodasLasPaginas, cargaCompartida, puedeActualizar } from "./lib/car
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.6.82/build/pdf.worker.mjs";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Dentro de la app Android la página recibe su configuración antes de cargar.
+// Allí el inicio, las políticas y el token son pantallas nativas: la web no los repite.
+const EN_APP_ANDROID = !!window.__faltosConfig;
 
 const state = {
   session: null,
@@ -433,7 +436,10 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   });
 });
 
-$("btnVolverDashboard").addEventListener("click", () => { showView("view-dashboard"); loadNotas(); });
+$("btnVolverDashboard").addEventListener("click", () => {
+  if (state.origenDetalle === "view-subir") { state.origenDetalle = null; abrirSubirExpediente(); return; }
+  showView("view-dashboard"); loadNotas();
+});
 
 // Sincronización de lectura entre web y APK. No recarga la página, no navega al
 // inicio y nunca reemplaza un formulario abierto. Supabase sigue aplicando RLS.
@@ -692,10 +698,15 @@ async function onAuthed(session) {
     abrirCambioClave({ obligatorio: true });
     return;
   }
+  if (!EN_APP_ANDROID && !(await politicasAlDia())) return;
   $("topbar").classList.remove("hidden");
   await loadProfile(session.user.id);
   void prepararAlertasMovil();
-  showView("view-dashboard");
+  const sencillo = usaInicioSencillo();
+  document.body.classList.toggle("modo-sencillo", sencillo);
+  $("btnInicioSencillo").classList.toggle("hidden", !sencillo);
+  showView(sencillo ? "view-inicio" : "view-dashboard");
+  void actualizarAvisoToken();
   // Efectivos se carga ANTES que las notas (y se espera) porque
   // renderNotasTable decide si mostrar el botón "Descargar Imputación" según
   // state.efectivos; si las notas se pintaran primero, ese arreglo estaría
@@ -719,6 +730,8 @@ function onSignedOut() {
   state.expedientesRemitidos = []; state.currentNotaId = null;
   $("estadoSincronizacion")?.remove();
   $("topbar").classList.add("hidden");
+  document.body.classList.remove("modo-sencillo");
+  $("tokenRecuperacion").classList.add("hidden");
   showView("view-login");
 }
 
@@ -4982,11 +4995,11 @@ async function loadCumplimientoView() {
   renderCumplimientoLista();
 }
 
-function renderCumplimientoLista() {
-  const container = $("cumplimientoLista");
+function renderCumplimientoLista(containerId = "cumplimientoLista") {
+  const container = $(containerId);
   if (!container) return;
   const list = state.cumplimientoDocs;
-  $("cumplimientoEmpty").classList.toggle("hidden", list.length > 0);
+  if (containerId === "cumplimientoLista") $("cumplimientoEmpty").classList.toggle("hidden", list.length > 0);
   const isAdmin = state.role === "admin";
   const miId = state.session?.user?.id;
 
@@ -5051,7 +5064,8 @@ function renderCumplimientoLista() {
       try {
         await firmarDocumento(supabase, { documentoId, version, firmanteId: state.session.user.id, nombre, grado, cargo });
         toast("Firma registrada.", "ok");
-        await loadCumplimientoView();
+        if (container.id === "politicasLista") await politicasAlDia();
+        else await loadCumplimientoView();
       } catch (err) {
         console.error(err);
         errEl.textContent = "Error: " + (err.message || err);
@@ -5098,6 +5112,242 @@ $("documentoInstitucionalForm")?.addEventListener("submit", async (e) => {
     errEl.classList.remove("hidden");
   } finally {
     ocuparBoton(submitBtn, false);
+  }
+});
+
+// ---------- Políticas al entrar (web) ----------
+// Igual que la app Android: un fallo de carga o una lista vacía no cuentan como
+// conformidad. Solo se continúa con todas las políticas firmadas en su versión vigente.
+async function politicasAlDia() {
+  let pendientes = null;
+  try {
+    [state.cumplimientoDocs, state.cumplimientoFirmas] = await Promise.all([
+      listarDocumentosInstitucionales(supabase),
+      listarFirmasDocumentos(supabase),
+    ]);
+    const miId = state.session?.user?.id;
+    if (state.cumplimientoDocs.length) {
+      pendientes = state.cumplimientoDocs.filter((d) => !state.cumplimientoFirmas.some((f) =>
+        f.documento_id === d.id && f.documento_version === d.version && f.firmante_id === miId));
+    }
+  } catch (err) {
+    console.error(err);
+    state.cumplimientoDocs = [];
+    state.cumplimientoFirmas = [];
+  }
+  if (pendientes && !pendientes.length && $("view-politicas").classList.contains("hidden")) return true;
+  $("topbar").classList.add("hidden");
+  showView("view-politicas");
+  const listas = !!pendientes;
+  $("politicasEstado").textContent = !listas
+    ? "No se pudieron cargar las políticas. Compruebe su conexión y reintente."
+    : pendientes.length
+      ? `Falta firmar ${pendientes.length} de ${state.cumplimientoDocs.length} documento(s).`
+      : "Todas las políticas están firmadas. Ya puede continuar.";
+  $("politicasReintentar").classList.toggle("hidden", listas);
+  $("politicasContinuar").disabled = !listas || pendientes.length > 0;
+  if (listas) renderCumplimientoLista("politicasLista");
+  else $("politicasLista").replaceChildren();
+  return false;
+}
+
+$("politicasContinuar").addEventListener("click", () => {
+  $("view-politicas").classList.add("hidden");
+  if (state.session) onAuthed(state.session);
+});
+$("politicasReintentar").addEventListener("click", () => { void politicasAlDia(); });
+$("politicasSalir").addEventListener("click", () => { void supabase.auth.signOut(); });
+
+// ---------- Inicio sencillo en celular (usuarios) ----------
+// El mismo inicio que la app Android: dos accesos grandes en lugar de pestañas.
+function usaInicioSencillo() {
+  return !EN_APP_ANDROID && state.role !== "admin" && window.matchMedia("(max-width: 700px)").matches;
+}
+
+$("btnInicioSencillo").addEventListener("click", () => showView("view-inicio"));
+$("inicioPendientes").addEventListener("click", () => { showView("view-dashboard"); loadNotas(); });
+$("inicioSubir").addEventListener("click", () => abrirSubirExpediente());
+$("subirBuscar").addEventListener("input", () => renderSubirExpediente());
+
+async function abrirSubirExpediente() {
+  showView("view-subir");
+  $("subirEstado").textContent = "Consultando sus expedientes…";
+  renderSubirExpediente();
+  const ok = await loadNotas();
+  $("subirEstado").textContent = ok === false ? "No se pudieron actualizar los expedientes. Compruebe su conexión." : "";
+  renderSubirExpediente();
+}
+
+function estadoSubida(n) {
+  if (n.archivo_orden_notificacion_path && n.orden_notificada_at) return ["pill-yes", "Expediente subido"];
+  if (n.archivo_leve_generada_at) return ["pill-yes", "Archivado sin sanción"];
+  return ["pill-warning", "Pendiente de subir"];
+}
+
+function renderSubirExpediente() {
+  const lista = $("subirLista");
+  const q = $("subirBuscar").value.trim().toLocaleLowerCase("es");
+  const filas = (state.notas || [])
+    .filter((n) => !q || `${nombreInvestigadoVisible(n, true)} ${n.numero_nota_falta || ""}`.toLocaleLowerCase("es").includes(q))
+    .sort((a, b) => (estadoSubida(a)[0] === "pill-warning" ? 0 : 1) - (estadoSubida(b)[0] === "pill-warning" ? 0 : 1));
+  lista.innerHTML = filas.map((n) => {
+    const [clase, texto] = estadoSubida(n);
+    return `<article class="detail-card subir-item">
+      <div>
+        <h3>${escapeHtml(nombreInvestigadoVisible(n, true))}</h3>
+        <p class="muted small">Nota ${escapeHtml(n.numero_nota_falta || "sin número")} · Falta: ${escapeHtml(formatDate(n.fecha_falta))}</p>
+        <span class="pill ${clase}">${texto}</span>
+      </div>
+      <button type="button" class="btn-secondary" data-abrir-nota="${escapeHtml(n.id)}">Abrir</button>
+    </article>`;
+  }).join("") || `<p class="muted">${state.notas?.length ? "No hay coincidencias." : "No hay expedientes disponibles para su perfil."}</p>`;
+  lista.querySelectorAll("[data-abrir-nota]").forEach((b) => b.addEventListener("click", async () => {
+    state.origenDetalle = "view-subir";
+    b.disabled = true;
+    try { await openNotaDetail(b.dataset.abrirNota); } finally { b.disabled = false; }
+  }));
+}
+
+// ---------- Token Digital desde la web (iPhone y navegadores) ----------
+// Usa una app de códigos estándar (Google/Microsoft Authenticator, Contraseñas de iPhone).
+// Es el mismo segundo factor de Supabase que verifica la pantalla «Código del token».
+async function tokenVerificado() {
+  const { data, error } = await supabase.auth.mfa.listFactors();
+  if (error) return null;
+  return (data?.all || []).some((f) => f.factor_type === "totp" && f.status === "verified");
+}
+
+async function actualizarAvisoToken() {
+  const falta = !EN_APP_ANDROID && (await tokenVerificado()) === false;
+  $("btnActivarToken").classList.toggle("hidden", !falta);
+  $("inicioAvisoToken").classList.toggle("hidden", !falta);
+}
+
+async function quitarTokensSinVerificar() {
+  const { data } = await supabase.auth.mfa.listFactors();
+  for (const f of data?.all || []) {
+    if (f.factor_type === "totp" && f.status !== "verified") await supabase.auth.mfa.unenroll({ factorId: f.id });
+  }
+}
+
+async function abrirActivarToken() {
+  $("tokenPasoQr").classList.remove("hidden");
+  $("tokenPasoCodigos").classList.add("hidden");
+  $("tokenActivarError").classList.add("hidden");
+  $("tokenNuevoCodigo").value = "";
+  $("tokenQrImagen").removeAttribute("src");
+  $("tokenSecreto").textContent = "";
+  $("modalToken").classList.remove("hidden");
+  try {
+    await quitarTokensSinVerificar();
+    const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: `Web ${new Date().toISOString()}` });
+    if (error) throw error;
+    state.tokenNuevoId = data.id;
+    $("tokenQrImagen").src = data.totp.qr_code;
+    $("tokenSecreto").textContent = data.totp.secret;
+    $("tokenNuevoCodigo").focus();
+  } catch (err) {
+    $("tokenActivarError").textContent = "No se pudo preparar el token: " + (err.message || err);
+    $("tokenActivarError").classList.remove("hidden");
+  }
+}
+
+async function cerrarActivarToken() {
+  $("modalToken").classList.add("hidden");
+  // Un token preparado y no confirmado no debe quedar a medias en la cuenta.
+  if (state.tokenNuevoId) {
+    state.tokenNuevoId = null;
+    try { await quitarTokensSinVerificar(); } catch (err) { console.warn(err); }
+  }
+  void actualizarAvisoToken();
+}
+
+async function copiarTexto(texto) {
+  try { await navigator.clipboard.writeText(texto); toast("Copiado.", "ok"); }
+  catch { toast("No se pudo copiar. Anótelo a mano."); }
+}
+
+$("btnActivarToken").addEventListener("click", abrirActivarToken);
+$("inicioActivarToken").addEventListener("click", abrirActivarToken);
+$("btnCerrarModalToken").addEventListener("click", cerrarActivarToken);
+$("btnCancelarToken").addEventListener("click", cerrarActivarToken);
+$("btnTerminarToken").addEventListener("click", cerrarActivarToken);
+$("tokenCopiarSecreto").addEventListener("click", () => copiarTexto($("tokenSecreto").textContent));
+$("tokenCopiarCodigos").addEventListener("click", () =>
+  copiarTexto([...$("tokenCodigosLista").children].map((li) => li.textContent).join("\n")));
+
+$("btnConfirmarToken").addEventListener("click", async (e) => {
+  const errEl = $("tokenActivarError");
+  errEl.classList.add("hidden");
+  const code = $("tokenNuevoCodigo").value.trim();
+  if (!state.tokenNuevoId) return;
+  if (!/^\d{6}$/.test(code)) {
+    errEl.textContent = "El código son 6 dígitos.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const btn = e.currentTarget;
+  ocuparBoton(btn, true, "Activando...");
+  try {
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: state.tokenNuevoId, code });
+    if (error) {
+      errEl.textContent = "Código incorrecto o vencido. Escriba el que muestra la app en este momento.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    state.tokenNuevoId = null;
+    $("tokenPasoQr").classList.add("hidden");
+    $("tokenPasoCodigos").classList.remove("hidden");
+    $("tokenCodigosLista").replaceChildren();
+    $("tokenCodigosError").classList.add("hidden");
+    const { data: codigos, error: errCodigos } = await supabase.rpc("generar_codigos_recuperacion");
+    if (errCodigos || !Array.isArray(codigos)) {
+      $("tokenCodigosError").textContent = "El token quedó activo, pero no se pudieron generar los códigos de recuperación. Pida ayuda al administrador.";
+      $("tokenCodigosError").classList.remove("hidden");
+    } else {
+      for (const c of codigos) { const li = document.createElement("li"); li.textContent = c; $("tokenCodigosLista").appendChild(li); }
+    }
+  } catch (err) {
+    errEl.textContent = "Error: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+// Recuperación: un código de un solo uso quita el token perdido (el servidor
+// limita los intentos) y la persona vuelve a activar uno nuevo.
+$("tokenPerdido").addEventListener("click", () => {
+  $("tokenRecuperacion").classList.toggle("hidden");
+  $("tokenRecuperacionCodigo").focus();
+});
+$("tokenRecuperacionUsar").addEventListener("click", async (e) => {
+  const errEl = $("tokenError");
+  errEl.classList.add("hidden");
+  const codigo = $("tokenRecuperacionCodigo").value.trim();
+  if (!codigo) return;
+  const btn = e.currentTarget;
+  ocuparBoton(btn, true, "Verificando...");
+  try {
+    const { data, error } = await supabase.rpc("usar_codigo_recuperacion", { p_codigo: codigo });
+    if (error) throw error;
+    if (data !== "ok") {
+      errEl.textContent = data === "bloqueado"
+        ? "Demasiados intentos. Espere una hora o pida ayuda al administrador."
+        : "Código de recuperación incorrecto o ya usado.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    $("tokenRecuperacionCodigo").value = "";
+    $("tokenRecuperacion").classList.add("hidden");
+    toast("Se quitó el token anterior. Active uno nuevo desde «Activar token».", "ok", 9000);
+    const { data: renovada } = await supabase.auth.refreshSession();
+    if (renovada?.session) await onAuthed(renovada.session);
+  } catch (err) {
+    errEl.textContent = "Error: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(btn, false);
   }
 });
 
