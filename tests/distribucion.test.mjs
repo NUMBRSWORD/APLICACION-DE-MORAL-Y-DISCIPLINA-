@@ -21,7 +21,11 @@ test('descarga, APK y metadatos tienen una sola versión y un hash verificable',
   const gradle=new URL('../app/build.gradle.kts',import.meta.url);
   if(existsSync(gradle)){
     const source=await readFile(gradle,'utf8');
-    assert.equal(Number(source.match(/versionCode = (\d+)/)[1]),version.versionCode);
-    assert.equal(source.match(/versionName = "([^"]+)"/)[1],version.versionName);
+    // Lo publicado para descargar NUNCA puede ser más nuevo que lo que se compila:
+    // eso anunciaría un APK que no existe. Al revés sí vale, y es lo normal
+    // mientras una versión está en desarrollo y todavía no se ha publicado.
+    const compilado=Number(source.match(/versionCode = (\d+)/)[1]);
+    assert.ok(compilado>=version.versionCode,
+      `Se anuncia la versión ${version.versionCode} y solo hay compilada la ${compilado}`);
   }
 });

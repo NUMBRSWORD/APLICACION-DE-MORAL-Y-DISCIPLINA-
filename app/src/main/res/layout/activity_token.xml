@@ -154,6 +154,16 @@
                     app:iconGravity="textStart"
                     app:iconTint="@color/sobre_primario" />
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCopiarClave" style="@style/Widget.MESADEPARTES.Button.Text"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" android:visibility="gone"
+                    android:text="@string/token_copiar_clave"/>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAutenticador" style="@style/Widget.MESADEPARTES.Button.Text"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" android:visibility="gone"
+                    android:text="@string/token_abrir_autenticador"/>
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnPerdiTelefono" style="@style/Widget.MESADEPARTES.Button.Text"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" android:visibility="gone"

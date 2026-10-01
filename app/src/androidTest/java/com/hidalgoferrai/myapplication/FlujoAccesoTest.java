@@ -46,6 +46,8 @@ public class FlujoAccesoTest {
     private volatile String factorEliminado;
     private volatile String factores = "[]";
     private static final String UID = "usuario-prueba-aislada";
+    /** Clave TOTP de ejemplo, la misma que devuelve el servidor simulado. */
+    private static final String SECRETO = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
     private static final String SESION = "{\"access_token\":\"sesion-ficticia\",\"refresh_token\":\"refresco-ficticio\",\"user\":{\"id\":\"usuario-prueba-aislada\",\"email\":\"prueba@example.invalid\"}}";
 
     @Before public void preparar() {
@@ -83,7 +85,10 @@ public class FlujoAccesoTest {
         }
         if (ruta.equals("/auth/v1/factors") && metodo.equals("POST")) {
             altas.incrementAndGet();
-            return "{\"id\":\"factor-prueba\",\"totp\":{\"secret\":\"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\"}}";
+            // Supabase devuelve también la URI otpauth://, que es lo que se entrega a
+            // la app de códigos para que agregue la cuenta sola.
+            return "{\"id\":\"factor-prueba\",\"totp\":{\"secret\":\"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\","
+                    + "\"uri\":\"otpauth://totp/Faltos:prueba?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\"}}";
         }
         if (metodo.equals("DELETE") && ruta.startsWith("/auth/v1/factors/")) {
             factorEliminado = ruta.substring(ruta.lastIndexOf('/') + 1);
@@ -282,37 +287,51 @@ public class FlujoAccesoTest {
         }
     }
 
-    @Test public void activacionFallidaReutilizaFactorPendiente() throws Exception {
+    /**
+     * La aplicación ya no genera el código: lo guarda una app de códigos. Si el
+     * código que escribe la persona no se puede verificar, el token NO queda activo
+     * y la clave no se guarda en el teléfono.
+     */
+    @Test public void activacionFallidaNoDejaElTokenActivo() throws Exception {
         falloVerificacion = true;
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
             esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
             assertEquals(0, altas.get());
+            activarConAppDeCodigos();
+            onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
             onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
             esperarTexto(R.id.tvEstadoToken, "REQUIERE");
-            assertEquals(1, altas.get());
+            assertEquals("Se inscribe un solo factor", 1, altas.get());
             assertFalse(AlmacenSeguro.tokenVerificado(contexto, UID));
-            assertNotNull(AlmacenSeguro.secreto(contexto, UID));
-            falloVerificacion = false;
-            onView(withId(R.id.btnReintentar)).perform(scrollTo(), click());
-            cerrarCodigosDeRespaldo();
-            esperarTexto(R.id.tvEstadoToken, "PROTECCIÓN ACTIVA");
-            assertEquals(1, altas.get());
-            assertEquals(2, verificaciones.get());
-            assertTrue(AlmacenSeguro.tokenVerificado(contexto, UID));
-            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
-            esperarTexto(R.id.tvNombre, "");
-            assertEquals("No reutilizar el mismo TOTP tras activarlo", 2, verificaciones.get());
+            assertNull("La clave del token no se guarda en el teléfono",
+                    AlmacenSeguro.secreto(contexto, UID));
         }
     }
 
-    @Test public void factorEnOtroTelefonoOfreceIngresoDeCodigo() throws Exception {
+    /** Sin app de códigos instalada, la clave se enseña para agregarla a mano. */
+    @Test public void sinAppDeCodigosSeOfreceLaClaveParaEscribirla() throws Exception {
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
+            activarConAppDeCodigos();
+            escenario.onActivity(a -> {
+                assertEquals(View.VISIBLE, a.findViewById(R.id.layoutCodigoExterno).getVisibility());
+                assertEquals(View.VISIBLE, a.findViewById(R.id.btnAutenticador).getVisibility());
+            });
+        }
+    }
+
+    /** Con un token ya activo se pide siempre el código escrito: nunca se muestra uno. */
+    @Test public void conTokenActivoSePideSiempreElCodigoEscrito() throws Exception {
         factores = "[{\"id\":\"otro-factor\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
-            esperarTexto(R.id.tvEstadoToken, "OTRO DISPOSITIVO");
+            esperarTexto(R.id.tvEstadoToken, "ESCRIBA SU CÓDIGO");
             escenario.onActivity(a -> {
                 assertFalse(((CircularProgressIndicator) a.findViewById(R.id.anillo)).isIndeterminate());
                 assertEquals(View.VISIBLE, a.findViewById(R.id.layoutCodigoExterno).getVisibility());
+                // El hueco del código queda en blanco: la app no genera ninguno.
+                assertEquals("— — —", ((TextView) a.findViewById(R.id.tvCodigo)).getText().toString());
             });
+            // Sin escribir nada no se verifica ni se inscribe nada.
             onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
             assertEquals(0, verificaciones.get());
             assertEquals(0, altas.get());
@@ -370,6 +389,8 @@ public class FlujoAccesoTest {
     @Test public void activarElTokenEntregaCodigosDeRespaldo() throws Exception {
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
             esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
+            activarConAppDeCodigos();
+            onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
             onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
             esperarTexto(R.id.tvCodigos, "ABCDE-FGHIJ");
             assertTrue(codigosEntregados);
@@ -377,34 +398,61 @@ public class FlujoAccesoTest {
             onView(withId(R.id.btnContinuar)).check(matches(not(isEnabled())));
             onView(withId(R.id.cbGuardados)).perform(scrollTo(), click());
             onView(withId(R.id.btnContinuar)).perform(scrollTo(), click());
-            esperarTexto(R.id.tvEstadoToken, "PROTECCIÓN ACTIVA");
+            assertTrue(AlmacenSeguro.tokenVerificado(contexto, UID));
+            assertNull("La clave queda solo en la app de códigos",
+                    AlmacenSeguro.secreto(contexto, UID));
         }
     }
 
-    /** Migrar con el teléfono viejo a mano: se activa aquí y el anterior deja de servir. */
-    @Test public void migrarDeTelefonoActivaElTokenAquiYRetiraElAnterior() throws Exception {
-        factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
+    /**
+     * Quien ya tenía el token dentro de la aplicación entra con él una última vez y
+     * se le propone pasarlo a su app de códigos. El viejo solo se retira cuando el
+     * nuevo ya quedó verificado.
+     */
+    @Test public void elTokenDeLaAppPasaALaAppDeCodigos() throws Exception {
+        AlmacenSeguro.guardarToken(contexto, UID, "factor-en-la-app", SECRETO);
+        factores = "[{\"id\":\"factor-en-la-app\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
-            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            onView(withText(R.string.token_mudanza_continuar)).inRoot(isDialog()).perform(click());
+            onView(withText(R.string.token_autenticador_entendido)).inRoot(isDialog()).perform(click());
+            esperarVisible(R.id.etCodigoExterno);
+            assertEquals("Se inscribe el token nuevo", 1, altas.get());
+            assertNull("El anterior sigue sirviendo mientras el nuevo no esté verificado",
+                    factorEliminado);
             onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
             onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
-            onView(withText(R.string.migrar_activar)).inRoot(isDialog()).perform(click());
             esperarTexto(R.id.tvCodigos, "ABCDE-FGHIJ");
-            assertEquals("Se inscribe un token propio", 1, altas.get());
-            assertEquals("Se retira el token del teléfono anterior", "factor-de-otro", factorEliminado);
+            assertEquals("Se retira el token anterior", "factor-en-la-app", factorEliminado);
+            assertNull("La clave deja de estar en el teléfono",
+                    AlmacenSeguro.secreto(contexto, UID));
         }
     }
 
-    /** Quien prefiere no migrar entra igual y no se le toca el token del otro teléfono. */
-    @Test public void migrarSePuedePosponerSinPerderElAcceso() throws Exception {
+    /** Si prefiere no pasarlo todavía, conserva el que tiene y entra igual. */
+    @Test public void posponerLaMudanzaConservaElTokenDeLaApp() throws Exception {
+        AlmacenSeguro.guardarToken(contexto, UID, "factor-en-la-app", SECRETO);
+        factores = "[{\"id\":\"factor-en-la-app\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
+        Perfil.guardar(contexto, UID, "S1 PNP", "Cuenta Demostración", "admin");
+        try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
+            onView(withText(R.string.token_mudanza_despues)).inRoot(isDialog()).perform(click());
+            esperarTexto(R.id.tvNombre, "Cuenta");
+            assertEquals(0, altas.get());
+            assertNull(factorEliminado);
+            assertNotNull("No se le quita el token que ya tenía",
+                    AlmacenSeguro.secreto(contexto, UID));
+        }
+    }
+
+    /** Entrar con el código escrito lleva al inicio sin tocar el token. */
+    @Test public void elCodigoEscritoDaAccesoSinInscribirNada() throws Exception {
         factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
         Perfil.guardar(contexto, UID, "S1 PNP", "Cuenta Demostración", "admin");
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
-            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            esperarTexto(R.id.tvEstadoToken, "ESCRIBA SU CÓDIGO");
             onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
             onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
-            onView(withText(R.string.migrar_ahora_no)).inRoot(isDialog()).perform(click());
             esperarTexto(R.id.tvNombre, "Cuenta");
+            assertEquals(1, verificaciones.get());
             assertEquals(0, altas.get());
             assertNull(factorEliminado);
         }
@@ -435,12 +483,16 @@ public class FlujoAccesoTest {
     @Test public void codigoDeRespaldoPermiteActivarEnOtroTelefono() throws Exception {
         factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
-            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            esperarTexto(R.id.tvEstadoToken, "ESCRIBA SU CÓDIGO");
             onView(withId(R.id.btnPerdiTelefono)).perform(scrollTo(), click());
             onView(withId(R.id.etCodigoRecuperacion)).inRoot(isDialog())
                     .perform(replaceText("ABCDE-FGHIJ"));
             onView(withText(R.string.recuperar_boton)).inRoot(isDialog()).perform(click());
-            // Se inscribe un token nuevo y se vuelven a entregar los códigos.
+            // Y desde ahí se activa de cero con la app de códigos.
+            onView(withText(R.string.token_autenticador_entendido)).inRoot(isDialog()).perform(click());
+            esperarVisible(R.id.etCodigoExterno);
+            onView(withId(R.id.etCodigoExterno)).perform(scrollTo(), replaceText("123456"), closeSoftKeyboard());
+            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
             esperarTexto(R.id.tvCodigos, "ABCDE-FGHIJ");
             assertEquals(1, altas.get());
         }
@@ -450,7 +502,7 @@ public class FlujoAccesoTest {
     @Test public void codigoDeRespaldoInvalidoNoActivaNada() throws Exception {
         factores = "[{\"id\":\"factor-de-otro\",\"factor_type\":\"totp\",\"status\":\"verified\"}]";
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
-            esperarTexto(R.id.tvEstadoToken, "TOKEN EN OTRO DISPOSITIVO");
+            esperarTexto(R.id.tvEstadoToken, "ESCRIBA SU CÓDIGO");
             onView(withId(R.id.btnPerdiTelefono)).perform(scrollTo(), click());
             onView(withId(R.id.etCodigoRecuperacion)).inRoot(isDialog())
                     .perform(replaceText("ZZZZZ-ZZZZZ"));
@@ -486,28 +538,55 @@ public class FlujoAccesoTest {
         }
     }
 
-    @Test public void recrearPantallaRecuperaActivacionPendiente() throws Exception {
-        falloVerificacion = true;
+    /**
+     * Abandonar a medias no deja un factor sin verificar colgando de la cuenta: se
+     * retira. Si no, cada intento fallido acumularía uno más.
+     */
+    @Test public void cancelarLaActivacionRetiraElFactorSinVerificar() throws Exception {
         try (ActivityScenario<TokenActivity> escenario = ActivityScenario.launch(tokenIntent())) {
             esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
-            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
-            esperarTexto(R.id.tvEstadoToken, "REQUIERE");
-            factores = "[{\"id\":\"factor-prueba\",\"factor_type\":\"totp\",\"status\":\"unverified\"}]";
-            escenario.recreate();
-            esperarTexto(R.id.tvEstadoToken, "LISTO PARA ACTIVAR");
-            falloVerificacion = false;
-            onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
-            cerrarCodigosDeRespaldo();
-            esperarTexto(R.id.tvEstadoToken, "PROTECCIÓN ACTIVA");
+            activarConAppDeCodigos();
             assertEquals(1, altas.get());
+            onView(withId(R.id.btnVolver)).perform(scrollTo(), click());
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            esperarCondicion("se retira el factor sin verificar",
+                    () -> "factor-prueba".equals(factorEliminado));
+            assertFalse(AlmacenSeguro.tokenVerificado(contexto, UID));
         }
     }
 
-    /** Tras activar siempre aparecen los códigos de respaldo: hay que confirmarlos para seguir. */
-    private void cerrarCodigosDeRespaldo() throws Exception {
-        esperarTexto(R.id.tvCodigos, "-");
-        onView(withId(R.id.cbGuardados)).perform(scrollTo(), click());
-        onView(withId(R.id.btnContinuar)).perform(scrollTo(), click());
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+    /**
+     * Pasos comunes: pulsar «Activar», aceptar las instrucciones y esperar a que la
+     * pantalla pida el código. Se espera por el botón de la app de códigos porque
+     * está a la vista tanto si hay autenticador instalado como si no.
+     */
+    private void activarConAppDeCodigos() throws Exception {
+        onView(withId(R.id.btnEntrar)).perform(scrollTo(), click());
+        onView(withText(R.string.token_autenticador_entendido)).inRoot(isDialog()).perform(click());
+        esperarVisible(R.id.btnAutenticador);
+    }
+
+    private void esperarVisible(int id) throws Exception {
+        esperarCondicion("la vista se hace visible", () -> {
+            final boolean[] visible = {false};
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                for (Activity a : ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(Stage.RESUMED)) {
+                    View v = a.findViewById(id);
+                    if (v != null && v.getVisibility() == View.VISIBLE) visible[0] = true;
+                }
+            });
+            return visible[0];
+        });
+    }
+
+    private void esperarCondicion(String que, java.util.concurrent.Callable<Boolean> condicion)
+            throws Exception {
+        long limite = System.currentTimeMillis() + 20000;
+        do {
+            if (Boolean.TRUE.equals(condicion.call())) return;
+            Thread.sleep(80);
+        } while (System.currentTimeMillis() < limite);
+        throw new AssertionError("No se cumplió: " + que);
     }
 }

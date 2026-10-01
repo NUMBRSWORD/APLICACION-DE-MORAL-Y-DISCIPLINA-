@@ -73,6 +73,22 @@ public final class AlmacenSeguro {
             prefs(contexto).edit().putBoolean(CLAVE_VERIFICADO, true).apply();
     }
 
+    /**
+     * Deja constancia de que esta cuenta tiene el token activo, SIN guardar ninguna
+     * clave: desde la versión 1.7 la clave vive en la app de códigos del teléfono y
+     * esta aplicación no debe conocerla. Solo se anota para saber qué mostrar.
+     */
+    public static void marcarTokenEnAppDeCodigos(Context contexto, String usuarioId,
+                                                 String factorId) {
+        if (usuarioId == null || usuarioId.isEmpty()) return;
+        prefs(contexto).edit()
+                .putString(CLAVE_USUARIO, usuarioId)
+                .putString(CLAVE_FACTOR, factorId)
+                .remove(CLAVE_SECRETO)
+                .putBoolean(CLAVE_VERIFICADO, true)
+                .apply();
+    }
+
     public static String secreto(Context contexto, String usuarioId) {
         if (!esDelUsuario(contexto, usuarioId)) {
             return null;

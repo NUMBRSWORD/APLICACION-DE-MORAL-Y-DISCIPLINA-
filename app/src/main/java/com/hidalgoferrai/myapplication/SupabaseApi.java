@@ -193,9 +193,13 @@ public final class SupabaseApi {
                 .put("friendly_name", nombreAmistoso);
         JSONObject r = new JSONObject(
                 SupabaseAuth.pedir("POST", "/auth/v1/factors", token, cuerpo.toString(), null));
+        JSONObject totp = r.getJSONObject("totp");
         return new JSONObject()
                 .put("id", r.getString("id"))
-                .put("secreto", r.getJSONObject("totp").getString("secret"));
+                .put("secreto", totp.getString("secret"))
+                // La URI otpauth:// es lo que entiende cualquier app de códigos:
+                // se abre con un Intent y la cuenta se agrega sola, sin teclear.
+                .put("uri", totp.optString("uri", ""));
     }
 
     /**

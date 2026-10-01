@@ -106,6 +106,41 @@
         <item quantity="other">Renueva en %d segundos</item>
     </plurals>
 
+    <!-- El token ya no lo genera esta aplicación: lo guarda una app de códigos
+         (Google Authenticator, Microsoft Authenticator o Contraseñas en iPhone),
+         igual que en la web. Así, si se pierde el teléfono, el respaldo en la
+         nube de esa app devuelve los códigos en el teléfono nuevo. -->
+    <string name="token_estado_pedir">ESCRIBA SU CÓDIGO</string>
+    <string name="token_pedir_codigo">Abra su app de códigos y escriba abajo los 6 dígitos que le muestra para «Faltos».</string>
+    <string name="token_abrir_autenticador">Abrir mi app de códigos</string>
+    <string name="token_autenticador_titulo">Guarde su token en una app de códigos</string>
+    <string name="token_autenticador_pasos">1. Instale en este celular Google Authenticator o Microsoft Authenticator (gratis). En iPhone también sirve la app Contraseñas.\n\n2. ACTIVE EL RESPALDO EN LA NUBE de esa app: en Google Authenticator, inicie sesión con su cuenta de Google; en Microsoft Authenticator, active «Copia de seguridad en la nube». Así, si pierde el celular, al instalar la app en el nuevo sus códigos vuelven solos.\n\n3. Toque «Abrir mi app de códigos»: la cuenta se agrega sola.\n\n4. Escriba aquí el código de 6 dígitos que le muestre.</string>
+    <string name="token_autenticador_entendido">Abrir mi app de códigos</string>
+    <string name="token_sin_autenticador_titulo">No se encontró una app de códigos</string>
+    <string name="token_sin_autenticador">Instale Google Authenticator y vuelva a intentarlo. Si prefiere, agregue la cuenta a mano con esta clave:</string>
+    <string name="token_instalar_autenticador">Instalar Google Authenticator</string>
+    <string name="token_copiar_clave">Copiar la clave</string>
+    <string name="token_clave_copiada">Clave copiada</string>
+    <string name="token_clave_manual">Clave para agregarla a mano</string>
+    <string name="token_cancelar_activacion">Cancelar la activación</string>
+    <string name="token_activacion_cancelada">Activación cancelada. Su token no quedó a medias.</string>
+    <string name="token_sin_play">No se pudo abrir Play Store. Busque «Google Authenticator» en la tienda de su celular.</string>
+
+    <!-- Quien ya tenía el token dentro de la aplicación: se usa su clave local
+         una última vez para entrar y después pasa a la app de códigos. -->
+    <string name="token_mudanza_titulo">Su token pasa a su app de códigos</string>
+    <string name="token_mudanza_mensaje">Hasta ahora esta aplicación generaba su código. A partir de esta versión lo guarda una app de códigos, como Google Authenticator, que tiene respaldo en la nube: si pierde el celular, sus códigos vuelven solos en el nuevo.\n\nVa a activarlo ahora. El token anterior seguirá sirviendo hasta que el nuevo quede verificado.</string>
+    <string name="token_mudanza_continuar">Pasarlo a mi app de códigos</string>
+    <string name="token_mudanza_despues">Ahora no</string>
+    <string name="token_mudanza_pendiente">Su token sigue en esta aplicación. Podrá pasarlo a su app de códigos cuando quiera, desde «Mi Token Digital».</string>
+
+    <!-- Hoja «Mi Token Digital» del inicio: ya no muestra códigos. -->
+    <string name="token_inferior_activo">Su Token Digital está activo y lo guarda su app de códigos.</string>
+    <string name="token_inferior_en_app">Su token todavía lo genera esta aplicación. Conviene pasarlo a su app de códigos.</string>
+    <string name="token_inferior_sin">Todavía no ha activado su Token Digital.</string>
+    <string name="token_inferior_pasar">Pasarlo a mi app de códigos</string>
+    <string name="token_inferior_activar">Activar mi Token Digital</string>
+
     <string name="inicio_nombre_formato">%1$s %2$s</string>
     <string name="inicio_panel_titulo">Panel de trabajo</string>
     <string name="inicio_panel_texto">Acceda rápidamente a las funciones habilitadas para su perfil.</string>

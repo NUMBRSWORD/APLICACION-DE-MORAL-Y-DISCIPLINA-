@@ -3,8 +3,6 @@ package com.hidalgoferrai.myapplication;
 import android.app.Dialog;
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,48 +10,60 @@ import android.view.WindowManager;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
-import com.google.android.material.progressindicator.LinearProgressIndicator;
 
-/** Consulta local del token: no abandona Inicio, no activa ni firma nada. */
+/**
+ * «Mi Token Digital» del inicio: dice en qué estado está y deja generar códigos de
+ * recuperación nuevos.
+ *
+ * Ya no muestra ningún código: desde esta versión el token lo guarda la app de
+ * códigos del teléfono, no esta aplicación. Enseñar aquí un código sería enseñar
+ * uno que el servidor ya no espera.
+ */
 public class TokenInferior extends BottomSheetDialogFragment {
-    private final Handler reloj = new Handler(Looper.getMainLooper());
-    private String secreto;
     private View contenido;
-    private final Runnable tic = new Runnable() {
-        @Override public void run() {
-            if (contenido == null || secreto == null) return;
-            try {
-                String codigo = Totp.codigo(secreto);
-                ((TextView) contenido.findViewById(R.id.tvCodigoInferior)).setText(
-                        getString(R.string.token_codigo_formato, codigo.substring(0,3), codigo.substring(3)));
-                int segundos = Totp.segundosRestantes();
-                ((TextView) contenido.findViewById(R.id.tvTiempoInferior)).setText(
-                        getResources().getQuantityString(R.plurals.token_expira_plural, segundos, segundos));
-                ((LinearProgressIndicator) contenido.findViewById(R.id.progresoTokenInferior)).setProgress(segundos);
-                reloj.postDelayed(this, 1000);
-            } catch (RuntimeException e) { sinToken(); }
-        }
-    };
+    private String usuarioId;
+    /** Token de versiones anteriores, todavía dentro de la aplicación. */
+    private boolean enLaApp;
+
     @NonNull @Override public Dialog onCreateDialog(Bundle estado) {
         Dialog dialogo = super.onCreateDialog(estado);
         if (dialogo.getWindow() != null)
             dialogo.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         return dialogo;
     }
+
     @Override public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup parent, Bundle estado) {
         contenido = inflater.inflate(R.layout.sheet_token, parent, false);
-        String uid = Perfil.usuarioId(requireContext());
-        if (uid != null && AlmacenSeguro.tokenVerificado(requireContext(), uid))
-            secreto = AlmacenSeguro.secreto(requireContext(), uid);
-        contenido.findViewById(R.id.btnCerrarToken).setOnClickListener(v -> dismiss());
-        contenido.findViewById(R.id.btnVerificarInferior).setOnClickListener(v -> {
+        usuarioId = Perfil.usuarioId(requireContext());
+        boolean verificado = usuarioId != null
+                && AlmacenSeguro.tokenVerificado(requireContext(), usuarioId);
+        enLaApp = verificado && AlmacenSeguro.secreto(requireContext(), usuarioId) != null;
+
+        // El hueco del código y su reloj dejan de tener sentido.
+        contenido.findViewById(R.id.progresoTokenInferior).setVisibility(View.GONE);
+        ((TextView) contenido.findViewById(R.id.tvCodigoInferior)).setVisibility(View.GONE);
+        ((TextView) contenido.findViewById(R.id.tvTiempoInferior)).setText(
+                !verificado ? R.string.token_inferior_sin
+                        : enLaApp ? R.string.token_inferior_en_app
+                        : R.string.token_inferior_activo);
+
+        com.google.android.material.button.MaterialButton accion =
+                contenido.findViewById(R.id.btnVerificarInferior);
+        accion.setVisibility(View.VISIBLE);
+        accion.setText(!verificado ? R.string.token_inferior_activar
+                : enLaApp ? R.string.token_inferior_pasar
+                : R.string.token_titulo);
+        accion.setOnClickListener(v -> {
             startActivity(new Intent(requireContext(), TokenActivity.class)
-                    .putExtra(TokenActivity.EXTRA_USUARIO_ID, uid));
+                    .putExtra(TokenActivity.EXTRA_USUARIO_ID, usuarioId));
             dismiss();
         });
+
+        contenido.findViewById(R.id.btnCerrarToken).setOnClickListener(v -> dismiss());
         // Quien activó su token antes de que existieran los códigos también puede obtenerlos.
         contenido.findViewById(R.id.btnCodigosRespaldo).setOnClickListener(v -> confirmarCodigos());
-        if (secreto == null) sinToken();
+        contenido.findViewById(R.id.btnCodigosRespaldo)
+                .setVisibility(verificado ? View.VISIBLE : View.GONE);
         return contenido;
     }
 
@@ -69,18 +79,5 @@ public class TokenInferior extends BottomSheetDialogFragment {
                 .show();
     }
 
-    private void sinToken() {
-        secreto = null;
-        ((TextView) contenido.findViewById(R.id.tvCodigoInferior)).setText("— — —");
-        ((TextView) contenido.findViewById(R.id.tvTiempoInferior)).setText(R.string.token_sin_local);
-        contenido.findViewById(R.id.progresoTokenInferior).setVisibility(View.GONE);
-        contenido.findViewById(R.id.btnVerificarInferior).setVisibility(View.VISIBLE);
-    }
-    @Override public void onStart() { super.onStart(); reloj.post(tic); }
-    @Override public void onStop() {
-        reloj.removeCallbacks(tic);
-        if (contenido != null) ((TextView) contenido.findViewById(R.id.tvCodigoInferior)).setText("");
-        super.onStop();
-    }
-    @Override public void onDestroyView() { reloj.removeCallbacks(tic); contenido = null; secreto = null; super.onDestroyView(); }
+    @Override public void onDestroyView() { contenido = null; super.onDestroyView(); }
 }
