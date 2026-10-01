@@ -63,6 +63,30 @@ Con los secretos puestos, el cron diario se crea igual que el de
 
 La opción de activar avisos se muestra solo cuando existe una configuración
 Firebase válida; el permiso del sistema se solicita al tocar «Activar». Un error
-de registro no se presenta como éxito. Hasta completar los pasos de servidor y
-la prueba de extremo a extremo, el APK es una **vista previa**, no una entrega de
-notificaciones operativas ni una versión lista para Play Store.
+de registro no se presenta como éxito.
+
+## Probado de extremo a extremo el 30/09/2026
+
+La cadena completa quedó comprobada en un teléfono real, con la variante QA
+(«Faltos QA», ), que usa el mismo proyecto Supabase:
+
+| Eslabón | Cómo se comprobó |
+|---|---|
+| Credencial FCM en el servidor | la función obtuvo su token de acceso y FCM aceptó el mensaje (200) |
+| Registro del teléfono | una fila en , a los segundos de activar |
+| Envío dirigido | solo al teléfono de esa cuenta, exigiendo  explícito |
+| Entrega con la app abierta | confirmada por el responsable |
+| **Entrega con la app cerrada** | confirmada: cerrada del todo y pantalla bloqueada |
+
+Tres envíos a las 21:41, 21:42 y 21:43 (hora de Lima); los tres llegaron.
+
+Detalle para no equivocarse después: el cron está en , que es **UTC**
+y equivale a las **8:05 de la mañana en Lima**. Si alguna vez se cambia desde el
+panel, hay que seguir escribiéndolo en UTC o los avisos saldrán de madrugada.
+
+## Lo que falta
+
+La clave  está escrita **en claro dentro del comando del
+cron** (), no en Vault, y su valor es adivinable: lleva el
+nombre del proyecto y una fecha. Es lo único que protege la función de envío.
+Conviene rotarla por una frase aleatoria.
