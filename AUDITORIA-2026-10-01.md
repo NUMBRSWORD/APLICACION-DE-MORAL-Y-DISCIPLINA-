@@ -24,3 +24,17 @@
 - Web: los datos dinámicos que se insertan con `innerHTML` pasan por `escapeHtml`; no se encontró inyección. No hay Content-Security-Policy.
 - Rendimiento: sin problemas al volumen actual (175 notas); solo avisos informativos de índices.
 - Sigue pendiente el hallazgo ALTO (MFA en servidor): aplicarlo cuando las 13 cuentas tengan token.
+
+## Correcciones aplicadas en producción (01/10/2026)
+Migración `20261001120000_endurece_permisos_auditoria` (reversión: `supabase/endurece-permisos-REVERTIR.sql`):
+- `anon` sin ningún permiso sobre tablas de `public` (antes: todos, incluido TRUNCATE en 16 tablas).
+- `authenticated` sin TRUNCATE/REFERENCES/TRIGGER (no los usa la API; TRUNCATE no respeta RLS).
+- `imputacion_pnp.es_admin()` y `handle_new_user()` ya no ejecutables sin sesión; `set_updated_at` con `search_path` fijo.
+- Índices en 3 llaves foráneas de `public`.
+
+Verificación antes/después como administrador real: 175 notas, 153 efectivos, 13 perfiles, 115 documentos, 4 firmas — idéntico. Usuario viewer: sigue viendo solo su perfil y sus 42 notas. `npm test`: 405/405.
+
+## Lo que no se puede corregir desde aquí
+- Protección de contraseñas filtradas: interruptor en el panel de Supabase (Auth).
+- `pg_net` en `public`: la extensión no admite cambiar de esquema; solo reinstalándola, con riesgo para los cron.
+- MFA obligatoria en servidor: esperar a que las 13 cuentas tengan token (hoy 2) y aplicar `seguridad-mfa-aal2.sql`. Comprobado: una cuenta viewer con sesión AAL1 aún lee sus notas.
