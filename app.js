@@ -6,7 +6,6 @@ import { renderizarImputacionDocx, construirDatosImputacion, puedeGenerarImputac
 import { renderizarActaNoDescargoDocx, construirDatosActaNoDescargo, puedeGenerarActaNoDescargo, plazoDescargoVencido, fechaLimiteDescargo } from "./lib/actaNoDescargo.js";
 import { renderizarOrdenSancionDocx, construirDatosOrdenSancion, puedeGenerarOrdenSancion, opcionesTercio, buildCasoConcreto, analisisSinDescargoDefault } from "./lib/ordenSancion.js";
 import { renderizarArchivoLeveDocx, puedeGenerarArchivoLeve } from "./lib/archivoLeve.js";
-import { renderizarOficioRemisionDocx, puedeGenerarOficioRemision, cargarFirmantes, guardarFirmantes } from "./lib/oficioRemision.js";
 import { renderizarInformeAdministrativoDocx, puedeGenerarInformeAdministrativo, diasDeAusencia, INFRACCIONES_GRAVES } from "./lib/informeAdministrativo.js";
 import { cargarDocxDeps } from "./lib/docxDeps.js";
 import { getInfraccion, normalizarCodigoInfraccion } from "./lib/anexoI.js";
@@ -20,6 +19,11 @@ import { restaurarNombres, seudonimizarInvestigados } from "./lib/privacidad.js"
 import { fechaLima, hoyLima, horaLima } from "./lib/fechas.js";
 import { DIAS_MINIMOS, INDETERMINADO, INICIO_INFORME, REMUNERACION, cumpleMinimo, descuentoDeNotas, formatearSoles, textoDescuento, textoDias } from "./lib/descuento.js";
 import { esClaveInicial, validarClaveNueva } from "./lib/acceso.js";
+import { prepararLote, revisarFila, filasGuardables, resumenDelLote, filaARegistroDeExpediente, necesitaAyudaDeIA, aplicarLecturaDeIA, marcarRepetidos } from "./lib/loteExpedientes.js";
+import { estadoDeRemision, esperaOficio, esperaHojaDeTramite } from "./lib/remision.js";
+import { datosDelOficio, documentosRemitidos, faltaParaElOficio, renderizarOficioRemisionDocx } from "./lib/oficioRemision.js";
+import { piezasDelExpediente } from "./lib/expedienteFirmado.js";
+import { leerTodasLasPaginas, cargaCompartida, puedeActualizar } from "./lib/cargaDatos.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.6.82/build/pdf.worker.mjs";
 
@@ -37,6 +41,10 @@ const state = {
   cumplimientoDocs: [],
   cumplimientoFirmas: [],
   expedientesRemitidos: [],
+  // Solo lo necesario para saber si a un caso le falta el oficio o la HT. Se
+  // carga con los casos, porque el estado se muestra en la lista principal y
+  // no solo dentro del módulo de Recepción.
+  remisiones: [],
   rolesServicio: [],
   asistenteHistorial: [],
 };
@@ -416,15 +424,48 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     if (target === "efectivos") { showView("view-efectivos"); loadEfectivos(); }
     if (target === "roles") { showView("view-roles"); loadRolesServicio(); }
     if (target === "directivas") { showView("view-directivas"); loadDirectivasView(); }
-    if (target === "agenda") { showView("view-agenda"); renderAgendaNotas(); }
+    if (target === "agenda") { showView("view-agenda"); actualizarVistaCompartida(); }
     if (target === "documentos") { showView("view-documentos"); loadDocumentosGenerados(); }
     if (target === "recepcion") { showView("view-recepcion"); loadNotas().then(loadExpedientesRemitidos); }
-    if (target === "panel") { showView("view-panel"); renderPanel(); }
+    if (target === "panel") { showView("view-panel"); actualizarVistaCompartida(); }
     if (target === "historial") { showView("view-historial"); loadHistorial(); }
   });
 });
 
 $("btnVolverDashboard").addEventListener("click", () => { showView("view-dashboard"); loadNotas(); });
+
+// Sincronización de lectura entre web y APK. No recarga la página, no navega al
+// inicio y nunca reemplaza un formulario abierto. Supabase sigue aplicando RLS.
+const actualizarVistaCompartida = cargaCompartida(async () => {
+  const vista = document.querySelector('.view:not(.hidden)')?.id;
+  if (!puedeActualizar({visible:document.visibilityState === 'visible', sesion:state.session && state.role,
+    modal:!!document.querySelector('.modal-overlay:not(.hidden)'),
+    editando:!!document.activeElement?.matches('input,textarea,select,[contenteditable=true]'), vista})) return;
+  const usuario = state.session.user.id;
+  let aviso = $("estadoSincronizacion");
+  if (!aviso) {
+    aviso = document.createElement('p'); aviso.id='estadoSincronizacion'; aviso.className='muted small';
+    aviso.setAttribute('role','status');
+  }
+  $(vista).prepend(aviso);
+  aviso.textContent='Actualizando datos…';
+  try {
+    const ok = vista === 'view-efectivos' ? await loadEfectivos() : await loadNotas();
+    if (usuario !== state.session?.user?.id) { aviso.remove(); return; }
+    if (ok === false) throw new Error('datos');
+    if (document.querySelector('.view:not(.hidden)')?.id === vista) {
+      if (vista === 'view-panel') await renderPanel();
+      if (vista === 'view-agenda') renderAgendaNotas();
+    }
+    aviso.textContent='Datos actualizados · '+new Intl.DateTimeFormat('es-PE',{hour:'2-digit',minute:'2-digit'}).format(new Date());
+  } catch (_) {
+    aviso.textContent='Sin actualizar: compruebe su conexión. Los datos visibles pueden estar desactualizados.';
+  }
+});
+window.addEventListener('focus', actualizarVistaCompartida);
+window.addEventListener('faltos-resume', actualizarVistaCompartida);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) actualizarVistaCompartida(); });
+setInterval(actualizarVistaCompartida, 60000);
 
 // ---------- Paleta de búsqueda global (Ctrl + K) ----------
 // Salta rápido a un expediente sin recorrer pestañas. Trabaja sobre lo ya
@@ -673,6 +714,9 @@ async function onAuthed(session) {
 function onSignedOut() {
   state.session = null;
   state.role = null;
+  state.notas = []; state.efectivos = []; state.remisiones = [];
+  state.expedientesRemitidos = []; state.currentNotaId = null;
+  $("estadoSincronizacion")?.remove();
   $("topbar").classList.add("hidden");
   showView("view-login");
 }
@@ -858,11 +902,21 @@ $("cambiarClaveForm").addEventListener("submit", async (e) => {
 
 // ---------- Notas informativas ----------
 async function loadNotas() {
-  const { data, error } = await supabase
-    .from("notas_informativas")
-    .select("*, expedientes(*)")
-    .order("fecha_falta", { ascending: false });
-  if (error) { console.error(error); toast("No se pudieron cargar los expedientes: " + (error.message || "error de red o de sesión") + ". Intente recargar la página."); return; }
+  return cargarNotasCompletas();
+}
+const cargarNotasCompletas = cargaCompartida(async () => {
+  const usuario = state.session?.user?.id;
+  let data;
+  try {
+    data = await leerTodasLasPaginas(() => supabase.from("notas_informativas")
+      .select("*, expedientes(*)").order("fecha_falta", { ascending: false }).order("id"));
+    if (!usuario || usuario !== state.session?.user?.id) return false;
+    if (!await cargarRemisiones()) return false;
+  } catch (error) {
+    toast("No se pudieron actualizar los expedientes. Compruebe su conexión y vuelva a intentar.");
+    return false;
+  }
+  if (usuario !== state.session?.user?.id) return false;
   // La política de RLS "ve notas propias o es admin" ya filtra en el
   // servidor qué filas puede ver este usuario (por oficial_constato_cip);
   // el navegador nunca recibe las que no le corresponden, así que aquí ya
@@ -877,7 +931,8 @@ async function loadNotas() {
     "No hay expedientes pendientes. Los resueltos están en la pestaña «Seguimiento».",
   );
   aplicarFiltrosNotas();
-}
+  return true;
+});
 
 let notasVisibles = [];
 
@@ -920,6 +975,18 @@ function obtenerAccionesPrioritariasNotas() {
           ? "La ausencia ya se cerró. Complete las firmas y descargue el Informe Administrativo."
           : "La ausencia sigue en curso -- ya puede generar el Informe Administrativo \"a la fecha\", sin esperar la reincorporación.",
       }];
+    }
+    // El expediente firmado ya volvió: lo que queda es remitirlo. Ni el oficio
+    // ni la Hoja de Trámite existen cuando se sube el legajo -- la HT la emite
+    // el SIGE y vuelve recepcionada por DIVOPUS -- así que se piden aquí.
+    const remitidos = state.remisiones || [];
+    if (esperaOficio(nota, remitidos)) {
+      return [{ nota, nombre, prioridad: 0.2, tipo: "Falta generar el oficio", clase: "is-ready",
+        detalle: "El expediente firmado ya está archivado. Genere el oficio de remisión y adjúntelo en Recepción." }];
+    }
+    if (esperaHojaDeTramite(nota, remitidos)) {
+      return [{ nota, nombre, prioridad: 0.3, tipo: "Falta adjuntar la Hoja de Trámite", clase: "is-pending",
+        detalle: "Adjunte la HT que DIVOPUS devolvió recepcionada, para cerrar la remisión." }];
     }
     if (nota.archivo_leve_generada_at) {
       // Archivado sin sanción: caso concluido, no debe seguir sugiriendo
@@ -1053,11 +1120,30 @@ function etiquetaEstadoRecepcion(estado) {
   return ({ remitido: "Por revisar", recibido: "Recibido", observado: "Observado", archivado: "Archivado" })[estado] || "Por revisar";
 }
 
+async function cargarRemisiones() {
+  const usuario = state.session?.user?.id;
+  try {
+    const data = await leerTodasLasPaginas(() => supabase.from("expedientes_remitidos")
+      .select("id, nota_id, archivo_oficio_path, archivo_ht_path").order("id"));
+    if (!usuario || usuario !== state.session?.user?.id) return false;
+    state.remisiones = data; return true;
+  } catch (error) {
+    // No afirmar que falta un oficio cuando simplemente falló la consulta.
+    toast("No se pudo verificar la remisión. Los datos no se han actualizado; vuelva a intentar.");
+    return false;
+  }
+}
+
 async function loadExpedientesRemitidos() {
-  const { data, error } = await supabase
-    .from("expedientes_remitidos").select("*").order("remitido_at", { ascending: false });
-  if (error) { console.error(error); toast("No se pudo cargar la recepción: " + error.message); return; }
+  const usuario = state.session?.user?.id;
+  let data;
+  try {
+    data = await leerTodasLasPaginas(() => supabase.from("expedientes_remitidos")
+      .select("*").order("remitido_at", { ascending: false }).order("id"));
+  } catch (error) { toast("No se pudo actualizar la recepción. Vuelva a intentar."); return false; }
+  if (!usuario || usuario !== state.session?.user?.id) return false;
   state.expedientesRemitidos = data || [];
+  state.remisiones = data || [];
   await cargarEstadoRespaldoDrive();
   await renderExpedientesRemitidos();
 }
@@ -1905,8 +1991,6 @@ async function renderNotaDetail(nota) {
   const puedeSancion = puedeGenerarOrdenSancion(nota, state.efectivos);
   const opcionesSancion = opcionesTercio(nota.codigo_infraccion) || [];
   const puedeArchivo = puedeGenerarArchivoLeve(nota, state.efectivos);
-  const puedeOficio = puedeGenerarOficioRemision(nota, state.efectivos);
-  const firmantesOficio = cargarFirmantes();
   const avisoConsistencia = verificarConsistenciaCodigo(nota);
   const puedeInformeAdmin = puedeGenerarInformeAdministrativo(nota, state.efectivos);
   const yoMismoInforme = state.cip ? state.efectivos.find((ef) => ef.cip === state.cip) : null;
@@ -2158,40 +2242,17 @@ async function renderNotaDetail(nota) {
     </div>
     ` : ""}
 
-    ${puedeOficio ? `
-    <div class="detail-card">
-      <h3>Oficio de remisión</h3>
-      <p class="muted small">Remite al Jefe de la DIVOPUS la Orden de Sanción, la Notificación y entrega del acto administrativo, el Acta de no recepción de descargos y el Inicio de imputación. Los firmantes cambian con los relevos: confirme si continúan.</p>
-      <form id="oficioForm">
-        <label>N.º de oficio<input type="text" id="oNumero" inputmode="numeric" value="${escapeHtml(exp?.numero_oficio || "")}" required /></label>
-        <p class="small"><strong>Jefe DIVOPUS:</strong> ${escapeHtml(firmantesOficio.jefe_grado)} ${escapeHtml(firmantesOficio.jefe_nombre)}<br>
-        <strong>Comisario:</strong> ${escapeHtml(firmantesOficio.firma_grado)} ${escapeHtml(firmantesOficio.firma_nombre)} (${escapeHtml(firmantesOficio.firma_oa)})</p>
-        <label class="checkbox"><input type="checkbox" id="oContinuan" ${firmantesOficio.jefe_nombre && firmantesOficio.firma_nombre && firmantesOficio.firma_oa ? "checked" : ""} /> Continúan el mismo Jefe y Comisario</label>
-        <div id="oCambios" class="${firmantesOficio.jefe_nombre && firmantesOficio.firma_nombre && firmantesOficio.firma_oa ? "hidden" : ""}">
-          <div class="grid-2">
-            <label>Jefe: grado<input type="text" id="oJefeGrado" value="${escapeHtml(firmantesOficio.jefe_grado)}" /></label>
-            <label>Jefe: nombre completo<input type="text" id="oJefeNombre" value="${escapeHtml(firmantesOficio.jefe_nombre)}" /></label>
-          </div>
-          <label>Jefe: cargo<input type="text" id="oJefeCargo" value="${escapeHtml(firmantesOficio.jefe_cargo)}" /></label>
-          <div class="grid-2">
-            <label>Comisario: grado<input type="text" id="oFirmaGrado" value="${escapeHtml(firmantesOficio.firma_grado)}" /></label>
-            <label>Comisario: nombre completo<input type="text" id="oFirmaNombre" value="${escapeHtml(firmantesOficio.firma_nombre)}" /></label>
-          </div>
-          <div class="grid-2">
-            <label>Comisario: OA (OA-CIP)<input type="text" id="oFirmaOa" value="${escapeHtml(firmantesOficio.firma_oa)}" /></label>
-            <label>Comisario: cargo<input type="text" id="oFirmaCargo" value="${escapeHtml(firmantesOficio.firma_cargo)}" /></label>
-          </div>
-          <label>Iniciales del pie (ej. ARG/hbhf)<input type="text" id="oIniciales" value="${escapeHtml(firmantesOficio.iniciales)}" /></label>
-        </div>
-        <p id="oficioError" class="error hidden" role="alert"></p>
-        <button type="submit" class="btn-primary">${svgIco("descargar")}Descargar oficio</button>
-      </form>
-    </div>
-    ` : ""}
 
     ${isAdmin ? `
     <div class="detail-card">
       <h3>Expediente</h3>
+      ${esperaOficio(nota, state.remisiones || []) ? `
+        <p class="muted small">El expediente firmado ya está archivado. Falta el oficio con el que se remite.</p>
+        <button type="button" class="btn-primary" id="btnGenerarOficioCaso">Generar el oficio de remisión</button>
+      ` : ""}
+      ${esperaHojaDeTramite(nota, state.remisiones || []) ? `
+        <p class="muted small">El oficio ya está adjunto. Falta la Hoja de Trámite que DIVOPUS devuelve recepcionada; se adjunta en Recepción.</p>
+      ` : ""}
       ${exp ? `
         <div class="detail-grid">
           <div class="detail-field"><div class="label">N.º de oficio</div><div class="value">${escapeHtml(exp.numero_oficio || "-")}</div></div>
@@ -2199,19 +2260,29 @@ async function renderNotaDetail(nota) {
           <div class="detail-field"><div class="label">Días de sanción</div><div class="value">${exp.dias_sancion ?? "-"}</div></div>
           <div class="detail-field"><div class="label">Archivo</div><div class="value">${expArchivo}</div></div>
         </div>
-      ` : `
-        <p class="muted small">Sin expediente registrado.</p>
-        <form id="expForm">
-          <div class="grid-2">
-            <label>N.º de oficio<input type="text" id="eOficio" required /></label>
-            <label>N.º de HT<input type="text" id="eHt" required /></label>
-          </div>
-          <label>Días de sanción<input type="number" id="eDias" min="0" /></label>
-          <label>Archivo del expediente<input type="file" id="eArchivo" /></label>
-          <p id="expError" class="error hidden" role="alert"></p>
-          <button type="submit" class="btn-primary">Registrar expediente</button>
-        </form>
-      `}
+      ` : ""}
+      <!-- El formulario se muestra también cuando el expediente ya existe: el
+           número de oficio y sobre todo el de Hoja de Trámite se generan
+           DESPUÉS de subir el expediente firmado (la HT sale del SIGE, no de
+           aquí), así que hace falta poder anotarlos más tarde. Por eso tampoco
+           son obligatorios. -->
+      <details class="reception-documents" ${exp ? "" : "open"}>
+        <summary class="btn-secondary">${exp ? "Completar o corregir el expediente" : "Registrar el expediente"}</summary>
+        <div class="reception-documents-body">
+          ${exp ? `<p class="muted small">Se guarda sobre el expediente que ya existe. Lo que deje en blanco se borra, así que deje escrito lo que quiera conservar. Si adjunta un archivo, reemplaza al anterior.</p>`
+                : `<p class="muted small">Sin expediente registrado. El número de oficio y el de Hoja de Trámite pueden anotarse después, cuando se generen.</p>`}
+          <form id="expForm">
+            <div class="grid-2">
+              <label>N.º de oficio<input type="text" id="eOficio" value="${escapeHtml(exp?.numero_oficio || "")}" /></label>
+              <label>N.º de HT<input type="text" id="eHt" value="${escapeHtml(exp?.numero_ht || "")}" /></label>
+            </div>
+            <label>Días de sanción<input type="number" id="eDias" min="0" value="${exp?.dias_sancion ?? ""}" /></label>
+            <label>Archivo del expediente<input type="file" id="eArchivo" /></label>
+            <p id="expError" class="error hidden" role="alert"></p>
+            <button type="submit" class="btn-primary">${exp ? "Guardar cambios" : "Registrar expediente"}</button>
+          </form>
+        </div>
+      </details>
     </div>
     ` : ""}
 
@@ -2245,36 +2316,6 @@ async function renderNotaDetail(nota) {
     openNotaDetail(nota.id);
   });
   $("btnDescargarActaDetalle")?.addEventListener("click", (e) => handleDescargarActaNoDescargo(nota, e.currentTarget));
-  $("oContinuan")?.addEventListener("change", (e) => $("oCambios").classList.toggle("hidden", e.target.checked));
-  $("oficioForm")?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const btn = e.submitter || e.currentTarget.querySelector("button[type=submit]");
-    const errEl = $("oficioError");
-    errEl.classList.add("hidden");
-    ocuparBoton(btn, true, "Generando...");
-    try {
-      let firmantes = cargarFirmantes();
-      if (!$("oContinuan").checked) {
-        firmantes = {
-          ...firmantes,
-          jefe_grado: $("oJefeGrado").value.trim(), jefe_nombre: $("oJefeNombre").value.trim(), jefe_cargo: $("oJefeCargo").value.trim(),
-          firma_grado: $("oFirmaGrado").value.trim(), firma_nombre: $("oFirmaNombre").value.trim(),
-          firma_oa: $("oFirmaOa").value.trim(), firma_cargo: $("oFirmaCargo").value.trim(),
-          iniciales: $("oIniciales").value.trim(),
-        };
-      }
-      const numeroOficio = $("oNumero").value.trim();
-      const blob = await renderizarOficioRemisionDocx(nota, state.efectivos, { numeroOficio, firmantes });
-      guardarFirmantes(firmantes);
-      saveAs(blob, nombreArchivoDocumento(`OFICIO ${numeroOficio}`, nota));
-    } catch (err) {
-      console.error(err);
-      errEl.textContent = err.message || "No se pudo generar el oficio.";
-      errEl.classList.remove("hidden");
-    } finally {
-      ocuparBoton(btn, false);
-    }
-  });
   $("btnAbrirRecepcionDesdeNota")?.addEventListener("click", () => { showView("view-recepcion"); loadNotas().then(loadExpedientesRemitidos); });
   $("btnRevisarImputacion")?.addEventListener("click", () => abrirRevision("imputacion", nota));
   $("btnRevisarActa")?.addEventListener("click", () => abrirRevision("acta", nota));
@@ -2290,6 +2331,7 @@ async function renderNotaDetail(nota) {
   $("btnRedactarIA")?.addEventListener("click", () => redactarConIA(nota));
   $("btnVerificarNotifIA")?.addEventListener("click", () => verificarNotificacionOrdenIA(nota));
   $("ordenNotifForm")?.addEventListener("submit", (e) => submitNotificacionOrden(e, nota));
+  $("btnGenerarOficioCaso")?.addEventListener("click", () => abrirOficio(nota));
 
   // Si no hubo descargo, al elegir el tercio se rellena el "Análisis y
   // Evaluación" con el párrafo estándar (venció el plazo...) cerrando según
@@ -2884,33 +2926,55 @@ async function submitExpediente(e, notaId) {
   const dias_sancion = $("eDias").value ? Number($("eDias").value) : null;
   const file = $("eArchivo").files[0];
 
-  const { data: inserted, error } = await supabase.from("expedientes").insert({
-    nota_id: notaId, numero_oficio, numero_ht, dias_sancion,
-  }).select().single();
+  // El expediente puede existir ya, subido en lote: entonces esto lo completa
+  // (el oficio y la HT se generan después) en vez de crear un segundo.
+  const { data: previo } = await supabase.from("expedientes")
+    .select("id, archivo_expediente_path").eq("nota_id", notaId).maybeSingle();
 
-  if (error) { errEl.textContent = "Error: " + error.message; errEl.classList.remove("hidden"); return; }
+  const fila = { nota_id: notaId, numero_oficio: numero_oficio || null, numero_ht: numero_ht || null, dias_sancion };
 
+  // El archivo se sube ANTES de guardar la fila, para que el enlace entre en el
+  // mismo guardado: antes se insertaba la fila y se enlazaba después con un
+  // update, y sin política de UPDATE ese enlace se perdía en silencio.
+  let subida = null;
   if (file) {
-    const path = `${inserted.id}/${Date.now()}_${file.name}`;
+    const path = `${notaId}/${Date.now()}_${file.name}`;
     const { error: upErr } = await supabase.storage.from("expedientes").upload(path, file);
-    if (!upErr) {
-      await supabase.from("expedientes").update({
-        archivo_expediente_path: path, archivo_expediente_nombre: file.name,
-      }).eq("id", inserted.id);
-    }
+    if (upErr) { errEl.textContent = "No se pudo subir el archivo: " + upErr.message; errEl.classList.remove("hidden"); return; }
+    subida = { path, nombre: file.name };
+    fila.archivo_expediente_path = path;
+    fila.archivo_expediente_nombre = file.name;
+  }
+
+  const { error } = await supabase.from("expedientes").upsert(fila, { onConflict: "nota_id" });
+  if (error) {
+    if (subida) await supabase.storage.from("expedientes").remove([subida.path]);
+    errEl.textContent = "Error: " + error.message;
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  // El archivo anterior se borra solo cuando el nuevo ya quedó guardado.
+  if (subida && previo?.archivo_expediente_path && previo.archivo_expediente_path !== subida.path) {
+    await supabase.storage.from("expedientes").remove([previo.archivo_expediente_path]);
   }
   openNotaDetail(notaId);
 }
 
 // ---------- Efectivos ----------
 async function loadEfectivos() {
-  const { data, error } = await supabase
-    .from("efectivos")
-    .select("*")
-    .order("apellidos_nombres", { ascending: true });
-  if (error) { console.error(error); toast("No se pudo cargar el padrón de Efectivos: " + (error.message || "error de red") + ". Los documentos podrían no completar CIP/DNI."); return; }
+  const usuario = state.session?.user?.id;
+  let data;
+  try {
+    data = await leerTodasLasPaginas(() => supabase.from("efectivos")
+      .select("*").order("apellidos_nombres", { ascending: true }).order("id"));
+  } catch (error) {
+    toast("No se pudo actualizar el padrón. Compruebe su conexión antes de generar documentos."); return false;
+  }
+  if (!usuario || usuario !== state.session?.user?.id) return false;
   state.efectivos = data || [];
   renderEfectivosTable(state.efectivos);
+  return true;
 }
 
 function renderEfectivosTable(list) {
@@ -3295,6 +3359,132 @@ async function extractPdfText(file, onEstado, { verificarSoloCabecera = false } 
     }
   }
   return textoBase;
+}
+
+// ---------------------------------------------------------------------------
+// Expedientes firmados: leer por página y recortar
+// ---------------------------------------------------------------------------
+
+// Cuántos caracteres hacen creíble que una página traiga texto de verdad y no
+// cuatro restos sueltos de la capa del escáner.
+const MINIMO_TEXTO_POR_PAGINA = 120;
+
+// Mismo tamaño de lote que el resto de la web. Un fajo de veinticinco hojas se
+// lee en siete llamadas en vez de veinticinco: importa porque el tope diario de
+// IA es de 300 llamadas para todo el sistema.
+const PAGINAS_POR_LOTE_OCR = 4;
+
+/** Una página del PDF convertida en imagen para mandarla a transcribir. */
+async function imagenDePagina(page) {
+  const viewport = page.getViewport({ scale: 1.8 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  return { data: canvasABase64Jpeg(canvas), mediaType: "image/jpeg" };
+}
+
+/**
+ * Transcribe un lote pidiendo que marque dónde acaba cada página.
+ *
+ * Devuelve un texto por página, o null si la cuenta no cuadró con las páginas
+ * enviadas. Null no es un fallo: es la señal de que ese lote hay que repetirlo
+ * de a una. Quedarse con un corte a medias sería peor que no cortar, porque
+ * mandaría páginas de un expediente al expediente de otra persona.
+ */
+async function transcribirLoteSeparado(imagenes) {
+  const { data, error } = await supabase.functions.invoke("extraer-texto-vision", {
+    body: { paginas: imagenes, separar: true },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  const paginas = data?.paginas;
+  return Array.isArray(paginas) && paginas.length === imagenes.length ? paginas : null;
+}
+
+/**
+ * Texto de cada página por separado, en orden.
+ *
+ * `extractPdfText` junta todo y, para leer un fajo, eso no sirve: hace falta
+ * saber en qué página empieza cada expediente para poder recortarlo. Los
+ * expedientes firmados que devuelve el investigado son escaneos sin capa de
+ * texto, así que casi siempre se resuelve con reconocimiento óptico.
+ *
+ * Se manda de a cuatro páginas pidiendo una marca de corte entre ellas, y solo
+ * si la marca no vuelve completa se repite ESE lote de a una. Así se conserva
+ * el límite exacto entre páginas sin gastar una llamada por hoja.
+ */
+async function extraerTextoPorPagina(file, onEstado) {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const textos = new Array(pdf.numPages).fill("");
+  const porLeer = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const contenido = await page.getTextContent();
+    const delPdf = contenido.items.map((it) => it.str).join(" ");
+    if (delPdf.replace(/\s+/g, "").length >= MINIMO_TEXTO_POR_PAGINA) textos[i - 1] = delPdf;
+    else porLeer.push({ numero: i, page, respaldo: delPdf });
+  }
+
+  for (let d = 0; d < porLeer.length; d += PAGINAS_POR_LOTE_OCR) {
+    const lote = porLeer.slice(d, d + PAGINAS_POR_LOTE_OCR);
+    const desde = lote[0].numero;
+    const hasta = lote[lote.length - 1].numero;
+    onEstado?.(`Leyendo con IA ${lote.length > 1 ? `las páginas ${desde}-${hasta}` : `la página ${desde}`} de ${pdf.numPages}...`);
+    // Se dibujan solo las de este lote: tener veinticinco imágenes de escaneo
+    // en memoria a la vez tumbaría el navegador del teléfono.
+    const imagenes = [];
+    for (const p of lote) imagenes.push(await imagenDePagina(p.page));
+
+    let leidas = null;
+    try {
+      leidas = lote.length > 1 ? await transcribirLoteSeparado(imagenes) : [await transcribirPaginasConIA(imagenes)];
+    } catch (err) {
+      console.error(`No se pudo leer el lote ${desde}-${hasta} de ${file.name}:`, err);
+    }
+
+    if (leidas) {
+      lote.forEach((p, k) => { textos[p.numero - 1] = leidas[k]; });
+      continue;
+    }
+
+    // El lote no se dejó cortar: se repite de a una, que sí es exacto.
+    onEstado?.(`Releyendo una por una las páginas ${desde}-${hasta}...`);
+    for (const p of lote) {
+      try {
+        textos[p.numero - 1] = await transcribirPaginasConIA([await imagenDePagina(p.page)]);
+      } catch (err) {
+        // Una página ilegible no puede tumbar el archivo entero: se deja lo que
+        // hubiera y la revisión avisará de lo que no se pudo leer.
+        console.error(`No se pudo leer la página ${p.numero} de ${file.name}:`, err);
+        textos[p.numero - 1] = p.respaldo;
+      }
+    }
+  }
+
+  return textos;
+}
+
+/**
+ * Saca de un PDF solo las páginas de un expediente, como archivo nuevo.
+ *
+ * Es imprescindible: un mismo escaneo trae los expedientes de varios efectivos
+ * seguidos. Adjuntar el archivo entero a cada caso metería en el expediente de
+ * cada uno los datos personales de todos los demás.
+ */
+async function recortarPdf(file, desde, hasta) {
+  const { PDFDocument } = await import("https://esm.sh/pdf-lib@1.17.1");
+  const origen = await PDFDocument.load(await file.arrayBuffer());
+  const total = origen.getPageCount();
+  const primera = Math.max(1, Math.min(desde, total));
+  const ultima = Math.max(primera, Math.min(hasta, total));
+  if (primera === 1 && ultima === total) return file;
+  const destino = await PDFDocument.create();
+  const indices = [];
+  for (let i = primera - 1; i <= ultima - 1; i++) indices.push(i);
+  for (const pagina of await destino.copyPages(origen, indices)) destino.addPage(pagina);
+  return new Blob([await destino.save()], { type: "application/pdf" });
 }
 
 async function extractImagenTextoConOcr(blob, onEstado) {
@@ -4963,6 +5153,7 @@ $("asistenteForm")?.addEventListener("submit", async (e) => {
 
 // ---------- Panel de métricas ----------
 let chartsPanel = {};
+let revisionPanel = 0;
 
 // Mismas etapas que ya se muestran en el detalle de cada nota (Acta de No
 // Descargo / Orden de Sanción), resumidas en una sola categoría por caso
@@ -4987,6 +5178,11 @@ function esGraveConTextoLegal(n) {
 }
 
 function estadoDeNota(n) {
+  // La remisión es la última etapa y es la accionable: el oficio y la Hoja de
+  // Trámite se hacen después de archivar el expediente firmado.
+  const remitidos = state.remisiones || [];
+  if (esperaOficio(n, remitidos)) return "Expediente recibido, falta el oficio";
+  if (esperaHojaDeTramite(n, remitidos)) return "Oficio hecho, falta la Hoja de Trámite";
   if (n.archivo_leve_generada_at) return "Archivado (sin sanción)";
   if (notaConcluida(n)) return "Concluida";
   if (esGraveConTextoLegal(n)) return n.fecha_reincorporacion ? "Informe Administrativo (cerrado)" : "Informe Administrativo (en curso)";
@@ -4999,6 +5195,9 @@ function estadoDeNota(n) {
 }
 
 function claseEstadoNota(n) {
+  const remitidos = state.remisiones || [];
+  if (esperaOficio(n, remitidos)) return "pill-warning";
+  if (esperaHojaDeTramite(n, remitidos)) return "pill-info";
   if (notaConcluida(n)) return "pill-yes";
   if (esGraveConTextoLegal(n)) return "pill-warning";
   if (n.orden_sancion_generada_at) return "pill-yes";
@@ -5382,6 +5581,7 @@ function cargarChart() {
 }
 
 async function renderPanel() {
+  const revision = ++revisionPanel;
   const notas = state.notas;
   $("panelEmpty").classList.toggle("hidden", notas.length > 0);
   $("panelContenido").classList.toggle("hidden", notas.length === 0);
@@ -5392,6 +5592,7 @@ async function renderPanel() {
   let Chart;
   try {
     Chart = await cargarChart();
+    if (revision !== revisionPanel) return;
   } catch (err) {
     console.error(err); toast("No se pudieron cargar los gráficos. Revise la conexión."); return;
   }
@@ -5578,4 +5779,421 @@ function formatearHorasFalto(nota) {
   partes.push(`${horas}h`);
   partes.push(`${min}m`);
   return partes.join(" ");
+}
+
+// ---------------------------------------------------------------------------
+// EXPEDIENTES FIRMADOS EN LOTE
+//
+// El comando junta los expedientes ya terminados —firmados por el investigado y
+// con la sanción impuesta—, los escanea y los sube de una vez. Cada uno se
+// recorta de su PDF y se archiva en el caso que le corresponde, sin tener que
+// entrar caso por caso.
+//
+// La lógica de reconocimiento y cruce vive en lib/loteExpedientes.js, que sí
+// tiene pruebas. Aquí solo está la conexión: leer los archivos, mostrarlos para
+// revisar y guardarlos.
+// ---------------------------------------------------------------------------
+
+let expedientesLoteFilas = [];
+let expedientesLoteOcupado = false;
+function ocuparExpedientesLote(ocupado) {
+  expedientesLoteOcupado = ocupado;
+  for (const id of ["xlArchivo", "btnGuardarExpLote", "btnCerrarModalExpLote", "btnCancelarExpLote", "btnExpedientesLote"])
+    if ($(id)) $(id).disabled = ocupado;
+}
+
+$("btnExpedientesLote")?.addEventListener("click", () => {
+  if (expedientesLoteOcupado) return;
+  $("xlArchivo").value = "";
+  $("xlStatus").classList.add("hidden");
+  $("xlError").classList.add("hidden");
+  expedientesLoteFilas = [];
+  renderExpedientesLote();
+  $("modalExpedientesLote").classList.remove("hidden");
+});
+$("btnCerrarModalExpLote")?.addEventListener("click", cerrarExpedientesLote);
+$("btnCancelarExpLote")?.addEventListener("click", cerrarExpedientesLote);
+function cerrarExpedientesLote() {
+  if (!expedientesLoteOcupado) $("modalExpedientesLote").classList.add("hidden");
+}
+
+/**
+ * Casos que ya tienen un expediente guardado: al confirmar se reemplazaría.
+ * Se saca de lo ya cargado, porque `loadNotas` trae cada nota con sus
+ * expedientes; así no hace falta otra consulta ni puede quedar desfasado.
+ */
+function notasQueYaTienenExpediente() {
+  return state.notas.filter((n) => n.archivo_orden_notificacion_path).map((n) => n.id);
+}
+
+$("xlArchivo")?.addEventListener("change", async (e) => {
+  if (expedientesLoteOcupado) return;
+  const archivos = [...e.target.files].filter((f) => f.type === "application/pdf");
+  const statusEl = $("xlStatus");
+  const errEl = $("xlError");
+  errEl.classList.add("hidden");
+  expedientesLoteFilas = [];
+  renderExpedientesLote();
+  if (!archivos.length) { statusEl.classList.add("hidden"); return; }
+  ocuparExpedientesLote(true);
+  statusEl.classList.remove("hidden");
+  try {
+    // Antes del OCR, obtener los casos actuales (incluidos los que llegaron de la APK).
+    if (!await loadEfectivos() || !await loadNotas()) throw new Error("No se pudieron actualizar los casos. Vuelva a intentar.");
+    const leidos = [];
+    for (const file of archivos) {
+      statusEl.textContent = `${file.name}: leyendo...`;
+      leidos.push({
+        nombre: file.name,
+        file,
+        textosPorPagina: await extraerTextoPorPagina(file, (m) => { statusEl.textContent = `${file.name}: ${m}`; }),
+      });
+    }
+    statusEl.textContent = "Cruzando con los casos registrados...";
+    const yaConExpediente = notasQueYaTienenExpediente();
+    let filas = prepararLote(leidos, state.notas, state.efectivos, yaConExpediente);
+    filas = await completarConIA(filas, yaConExpediente, (m) => { statusEl.textContent = m; });
+    // La fila guarda el File de origen para poder recortarlo al guardar.
+    expedientesLoteFilas = filas
+      .map((f) => ({ ...f, file: leidos[f.indiceArchivo].file, confirmada: f.estado !== "detenido" }));
+    renderExpedientesLote();
+    const r = resumenDelLote(expedientesLoteFilas);
+    statusEl.textContent = `${archivos.length} archivo(s): ${r.total} expediente(s) encontrado(s).`;
+  } catch (err) {
+    console.error(err);
+    statusEl.classList.add("hidden");
+    errEl.textContent = "No se pudieron leer los archivos: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally { ocuparExpedientesLote(false); }
+});
+
+/**
+ * Segunda pasada con IA, solo para los expedientes a los que las reglas no les
+ * pudieron sacar una llave. El escaneo torcido o muy sucio es lo normal en un
+ * fajo de veinte hojas, y es justo lo que la IA rescata.
+ *
+ * Si la llamada falla, la fila se queda como estaba: la revisión ya avisa de lo
+ * que no se pudo leer, y es preferible eso a detener el lote entero.
+ */
+async function completarConIA(filas, yaConExpediente, onEstado) {
+  const pendientes = filas.filter(necesitaAyudaDeIA);
+  if (!pendientes.length) return filas;
+  const resultado = [...filas];
+  let hechas = 0;
+  for (const fila of pendientes) {
+    onEstado?.(`Revisando con IA lo que no se dejó leer (${++hechas} de ${pendientes.length})...`);
+    try {
+      const { data, error } = await supabase.functions.invoke("extraer-nota-informativa", {
+        body: { tipo: "expediente_firmado", texto: fila.texto },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const i = resultado.indexOf(fila);
+      resultado[i] = aplicarLecturaDeIA(fila, data, state.notas, state.efectivos, yaConExpediente);
+    } catch (err) {
+      console.error("La revisión con IA del expediente falló; se deja lo leído por reglas:", err);
+    }
+  }
+  return marcarRepetidos(resultado);
+}
+
+const PILDORA_ESTADO = {
+  listo: ["pill-yes", "Listo para archivar"],
+  revisar: ["pill-warning", "Revise antes de archivar"],
+  detenido: ["pill-danger", "No se puede archivar todavía"],
+};
+
+function renderExpedientesLote() {
+  const resumenEl = $("xlResumen");
+  const el = $("xlLista");
+  if (!expedientesLoteFilas.length) {
+    resumenEl.innerHTML = "";
+    el.innerHTML = "";
+    return;
+  }
+  const r = resumenDelLote(expedientesLoteFilas);
+  resumenEl.innerHTML = `<p class="muted small">${r.total} expediente(s): `
+    + `<span class="pill pill-yes">${r.listos} listo(s)</span> `
+    + `<span class="pill pill-warning">${r.revisar} por revisar</span> `
+    + `<span class="pill pill-danger">${r.detenidos} detenido(s)</span></p>`;
+
+  el.innerHTML = expedientesLoteFilas.map((f, i) => {
+    const [clase, texto] = PILDORA_ESTADO[f.estado];
+    const persona = f.nota
+      ? nombreCompletoVisible(f.nota.apellidos, f.nota.nombres)
+      : (f.datos.infractor?.completo || "sin identificar");
+    const sancion = f.datos.dias_sancion === null
+      ? "sanción sin leer"
+      : f.datos.dias_sancion === 0
+      ? "amonestación"
+      : `${f.datos.dias_sancion} día(s) ${f.datos.tipo_sancion === "rigor" ? "de rigor" : "simple(s)"}`;
+    const avisos = f.avisos.length
+      ? `<ul class="muted small" style="margin:6px 0 0 16px">${f.avisos.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`
+      : "";
+    return `
+      <div class="multi-efectivo-row" data-idx="${i}">
+        <label class="checkbox-row"><input type="checkbox" class="xlCheck" ${f.confirmada ? "checked" : ""} ${f.estado === "detenido" ? "disabled" : ""} /></label>
+        <div class="value" style="flex:1">
+          <div><strong>${escapeHtml(persona)}</strong> · ${escapeHtml(f.datos.codigo_infraccion || "sin código")} · ${escapeHtml(sancion)}</div>
+          <div class="muted small" style="margin-top:4px">
+            ${escapeHtml(f.archivo)}, página${f.paginas > 1 ? "s" : ""} ${f.desde}${f.paginas > 1 ? `–${f.hasta}` : ""}
+            ${f.datos.numero_nota_falta ? ` · nota N.º ${escapeHtml(f.datos.numero_nota_falta)}` : ""}
+            ${f.datos.cip_investigado ? ` · CIP ${escapeHtml(f.datos.cip_investigado)}` : ""}
+          </div>
+          ${f.motivoTexto ? `<div class="muted small">${escapeHtml(f.motivoTexto)}</div>` : ""}
+          <label class="muted small" style="display:block; margin-top:6px">Se notificó la orden el (de esta fecha arrancan los 3 días para apelar)
+            <input type="date" class="xlFecha" value="${escapeHtml(f.fechaNotificacion || "")}" ${f.estado === "detenido" ? "disabled" : ""} />
+          </label>
+          <span class="pill ${clase}">${texto}</span>
+          ${avisos}
+        </div>
+      </div>`;
+  }).join("");
+
+  el.querySelectorAll(".xlCheck").forEach((chk, i) => {
+    chk.addEventListener("change", () => { expedientesLoteFilas[i].confirmada = chk.checked; });
+  });
+  // La fecha se relee al cambiarla: puede ser justo lo que le faltaba a la fila
+  // para poder guardarse, así que se vuelve a revisar y a pintar.
+  el.querySelectorAll(".xlFecha").forEach((campo, i) => {
+    campo.addEventListener("change", () => {
+      const fila = expedientesLoteFilas[i];
+      expedientesLoteFilas[i] = {
+        ...revisarFila({ ...fila, fechaNotificacion: campo.value || null },
+          { yaConExpediente: notasQueYaTienenExpediente() }),
+        file: fila.file,
+        confirmada: fila.confirmada,
+      };
+      renderExpedientesLote();
+    });
+  });
+}
+
+$("btnGuardarExpLote")?.addEventListener("click", async (e) => {
+  if (expedientesLoteOcupado) return;
+  const btn = e.currentTarget;
+  const statusEl = $("xlStatus");
+  const errEl = $("xlError");
+  errEl.classList.add("hidden");
+
+  const aGuardar = filasGuardables(expedientesLoteFilas).filter((f) => f.confirmada);
+  if (!aGuardar.length) {
+    errEl.textContent = "No hay ningún expediente marcado para archivar.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  ocuparExpedientesLote(true);
+  ocuparBoton(btn, true, "Archivando...");
+  statusEl.classList.remove("hidden");
+  const fallos = [];
+  let guardados = 0;
+  try {
+    for (const [i, fila] of aGuardar.entries()) {
+      statusEl.textContent = `Archivando ${i + 1} de ${aGuardar.length}...`;
+      try {
+        // Si ese caso ya tenía un legajo registrado, se recuerda para borrarlo
+        // solo cuando el nuevo haya quedado guardado.
+        const anterior = fila.nota.archivo_orden_notificacion_path || null;
+
+        const recorte = await recortarPdf(fila.file, fila.desde, fila.hasta);
+        // Mismo depósito y misma forma de ruta que el formulario de un solo
+        // caso: es donde el resto de la aplicación busca el legajo firmado.
+        const path = `${fila.nota.id}/expediente_firmado_${Date.now()}_${fila.nombreSugerido}`;
+        const { error: upErr } = await supabase.storage.from("notas")
+          .upload(path, recorte, { contentType: "application/pdf" });
+        if (upErr) throw upErr;
+
+        // Y el mismo registro, que es lo que deja el caso por concluido.
+        const { error: dbErr } = await supabase.rpc("registrar_notificacion_orden",
+          filaARegistroDeExpediente(fila, { path, nombre: fila.nombreSugerido }));
+        if (dbErr) {
+          // El archivo ya subido no debe quedar suelto en el depósito.
+          await supabase.storage.from("notas").remove([path]);
+          throw dbErr;
+        }
+
+        if (anterior && anterior !== path) {
+          await supabase.storage.from("notas").remove([anterior]);
+        }
+        guardados++;
+        // Un reintento de un lote parcialmente fallido no vuelve a subir los éxitos.
+        fila.guardada = true; fila.confirmada = false;
+      } catch (err) {
+        console.error(`No se pudo archivar el expediente de ${fila.nombreSugerido}:`, err);
+        fallos.push(`${fila.archivo} (páginas ${fila.desde}–${fila.hasta}): ${err.message || err}`);
+      }
+    }
+
+    expedientesLoteFilas = expedientesLoteFilas.filter((f) => !f.guardada);
+    renderExpedientesLote();
+    await loadNotas();
+    if (fallos.length) {
+      statusEl.textContent = `Se archivaron ${guardados} de ${aGuardar.length}.`;
+      errEl.innerHTML = `No se pudieron archivar ${fallos.length}:<br>${fallos.map(escapeHtml).join("<br>")}`;
+      errEl.classList.remove("hidden");
+    } else {
+      $("modalExpedientesLote").classList.add("hidden");
+      toast(`Se archivaron ${guardados} expediente(s).`);
+    }
+  } finally {
+    ocuparExpedientesLote(false);
+    ocuparBoton(btn, false);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// OFICIO DE REMISIÓN
+//
+// Se hace después de tener el expediente firmado en mano. Casi todo sale de lo
+// ya registrado; solo dos cosas se confirman a mano: el jefe de la DIVOPUS, que
+// cambia cada tanto, y el comisario que firma, que se confirma cada vez.
+// Ambos quedan recordados en este equipo para no reescribirlos, y la pantalla
+// dice desde cuándo, que es lo que permite darse cuenta de que ya cambiaron.
+// ---------------------------------------------------------------------------
+
+const MEMORIA_OFICIO = "faltos.oficio.firmas";
+let notaDelOficio = null;
+
+function recordadoDelOficio() {
+  try { return JSON.parse(localStorage.getItem(MEMORIA_OFICIO) || "{}"); } catch { return {}; }
+}
+function recordarDelOficio(datos) {
+  try { localStorage.setItem(MEMORIA_OFICIO, JSON.stringify({ ...datos, confirmado: hoyLima() })); } catch { /* sin memoria, se escribe cada vez */ }
+}
+
+/** El oficial que constató la falta y firmó la orden: quien impuso la sanción. */
+function oficialQueSanciono(nota) {
+  const oficial = buscarOficialConstato(nota?.oficial_constato, state.efectivos || []);
+  if (!oficial) return {};
+  return { grado: (oficial.grado || "").trim(), nombre: limpiarNombreVisible(oficial.apellidos_nombres || "") };
+}
+
+/** Nombre con el que firma quien está usando la aplicación, para las iniciales. */
+function quienRedacta() {
+  const yo = (state.efectivos || []).find((e) => String(e.cip || "") === String(state.cip || ""));
+  return yo?.apellidos_nombres || state.email || "";
+}
+
+function abrirOficio(nota) {
+  notaDelOficio = nota;
+  const previo = recordadoDelOficio();
+  $("ofCaso").textContent = `Expediente de ${nombreInvestigadoVisible(nota, true)} · ${nota.codigo_infraccion || "sin código"}`;
+  $("ofNumero").value = "";
+  $("ofJefeGrado").value = previo.jefeGrado || "CORONEL PNP";
+  $("ofJefeNombre").value = previo.jefeNombre || "";
+  $("ofJefeCargo").value = previo.jefeCargo || "JEFE DE LA DIVOPUS 03 VENTANILLA";
+  $("ofComisarioGrado").value = previo.comisarioGrado || "";
+  $("ofComisarioNombre").value = previo.comisarioNombre || "";
+  $("ofComisarioOa").value = previo.comisarioOa || "";
+  $("ofComisarioCargo").value = previo.comisarioCargo || "COMISARIO DE VENTANILLA";
+  $("ofJefeDesde").textContent = previo.confirmado
+    ? `Confirmado por última vez el ${formatDate(previo.confirmado)}. Si cambiaron, corríjalo aquí.`
+    : "Todavía no se ha confirmado ninguno: escríbalos y quedarán recordados.";
+  $("ofError").classList.add("hidden");
+  refrescarResumenOficio();
+  $("modalOficio").classList.remove("hidden");
+}
+
+function datosDelOficioEnPantalla() {
+  return datosDelOficio({
+    nota: notaDelOficio,
+    piezas: piezasDelExpediente(""),
+    jefe: {
+      grado: $("ofJefeGrado").value.trim(),
+      nombre: $("ofJefeNombre").value.trim(),
+      cargo: $("ofJefeCargo").value.trim(),
+    },
+    comisario: {
+      grado: $("ofComisarioGrado").value.trim(),
+      nombre: $("ofComisarioNombre").value.trim(),
+      oa: $("ofComisarioOa").value.trim(),
+      cargo: $("ofComisarioCargo").value.trim(),
+    },
+    // Quién impuso la sanción sale del propio caso: es el oficial que constató
+    // y firmó la orden, y puede no ser el comisario que firma este oficio.
+    sanciona: oficialQueSanciono(notaDelOficio),
+    numeroOficio: $("ofNumero").value.trim(),
+    fecha: hoyLima(),
+    redactadoPor: quienRedacta(),
+  });
+}
+
+function refrescarResumenOficio() {
+  if (!notaDelOficio) return;
+  const datos = datosDelOficioEnPantalla();
+  const falta = faltaParaElOficio(datos);
+  $("ofResumen").textContent = falta.length
+    ? `Falta ${falta.join(", ")}.`
+    : `Se remite: orden de sanción con ${datos.sancion}, ${datos.documentos}.`;
+  $("btnGenerarOficio").disabled = falta.length > 0;
+}
+
+["ofNumero", "ofJefeGrado", "ofJefeNombre", "ofJefeCargo", "ofComisarioGrado", "ofComisarioNombre", "ofComisarioOa", "ofComisarioCargo"]
+  .forEach((id) => $(id)?.addEventListener("input", refrescarResumenOficio));
+
+$("btnCerrarModalOficio")?.addEventListener("click", cerrarOficio);
+$("btnCancelarOficio")?.addEventListener("click", cerrarOficio);
+function cerrarOficio() { $("modalOficio").classList.add("hidden"); notaDelOficio = null; }
+
+$("btnGenerarOficio")?.addEventListener("click", async (e) => {
+  if (!notaDelOficio) return;
+  const btn = e.currentTarget;
+  const errEl = $("ofError");
+  errEl.classList.add("hidden");
+  ocuparBoton(btn, true, "Generando...");
+  try {
+    // Las piezas se leen del legajo ya registrado, para anunciar lo que el
+    // expediente trae de verdad y no una lista fija.
+    const piezas = await piezasDelLegajoFirmado(notaDelOficio);
+    const datos = { ...datosDelOficioEnPantalla(), documentos: documentosRemitidos(piezas, notaDelOficio.codigo_infraccion) };
+    const blob = await renderizarOficioRemisionDocx(datos);
+    const nombreArchivo = nombreArchivoDocumento("OFICIO REMISION", notaDelOficio);
+    saveAs(blob, nombreArchivo);
+    registrarVersionDocumento(notaDelOficio.id, "oficio_remision", blob, nombreArchivo);
+    recordarDelOficio({
+      jefeGrado: $("ofJefeGrado").value.trim(),
+      jefeNombre: $("ofJefeNombre").value.trim(),
+      jefeCargo: $("ofJefeCargo").value.trim(),
+      comisarioGrado: $("ofComisarioGrado").value.trim(),
+      comisarioNombre: $("ofComisarioNombre").value.trim(),
+      comisarioOa: $("ofComisarioOa").value.trim(),
+      comisarioCargo: $("ofComisarioCargo").value.trim(),
+    });
+    cerrarOficio();
+    toast("Oficio generado. Adjúntelo en Recepción junto con la Hoja de Trámite cuando la reciba.");
+  } catch (err) {
+    console.error("No se pudo generar el oficio:", err);
+    errEl.textContent = "No se pudo generar el oficio: " + (err.message || err);
+    errEl.classList.remove("hidden");
+  } finally {
+    ocuparBoton(btn, false);
+  }
+});
+
+/**
+ * Qué piezas trae el legajo firmado que ya está subido. Se lee del propio PDF;
+ * si no se puede (sin red, archivo ilegible), se asume el caso corriente —acta
+ * de no descargo si no hay descargo registrado— porque el oficio se revisa
+ * antes de firmarse y es peor no poder generarlo.
+ */
+async function piezasDelLegajoFirmado(nota) {
+  const porDefecto = {
+    imputacion: true,
+    descargo: !!nota.fecha_descargo,
+    acta_no_descargo: !nota.fecha_descargo,
+    orden_sancion: true,
+    notificacion_firmada: true,
+  };
+  if (!nota.archivo_orden_notificacion_path) return porDefecto;
+  try {
+    const { data: blob, error } = await supabase.storage.from("notas").download(nota.archivo_orden_notificacion_path);
+    if (error || !blob) return porDefecto;
+    const texto = (await extraerTextoPorPagina(blob)).join("\n");
+    const leidas = piezasDelExpediente(texto);
+    return leidas.orden_sancion || leidas.archivo ? leidas : porDefecto;
+  } catch (err) {
+    console.error("No se pudo leer el legajo para saber qué documentos anuncia el oficio:", err);
+    return porDefecto;
+  }
 }
