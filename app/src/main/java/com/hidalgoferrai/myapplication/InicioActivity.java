@@ -16,6 +16,7 @@ import android.webkit.WebStorage;
 import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
@@ -70,10 +71,16 @@ public class InicioActivity extends AppCompatActivity {
                 ? R.string.inicio_admin_titulo : R.string.inicio_usuario_titulo);
         ((TextView) findViewById(R.id.tvPanelTexto)).setText(administrador
                 ? R.string.inicio_admin_texto : R.string.inicio_usuario_texto);
-        findViewById(R.id.btnMiToken).setOnClickListener(v -> {
-            if (getSupportFragmentManager().findFragmentByTag("token-inferior") == null)
-                new TokenInferior().show(getSupportFragmentManager(), "token-inferior");
-        });
+        // El Token Digital ya no se muestra aquí: desde la versión 1.7 lo guarda la app
+        // de códigos del teléfono, no esta aplicación. Lo único que sigue siendo cosa
+        // nuestra son los códigos de recuperación, que quedan al pie.
+        findViewById(R.id.btnCodigosRecuperacion).setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle(R.string.recuperacion_nuevos)
+                .setMessage(R.string.recuperacion_reemplaza)
+                .setNegativeButton(R.string.eliminar_cancelar, null)
+                .setPositiveButton(R.string.recuperacion_generar, (d, b) ->
+                        startActivity(new Intent(this, RecuperacionActivity.class)))
+                .show());
         if (administrador) {
             agregar(grid, R.string.inicio_admin_panel, R.string.inicio_admin_panel_detalle,
                     R.drawable.ic_calendario, "panel");

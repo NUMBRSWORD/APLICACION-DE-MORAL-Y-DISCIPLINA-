@@ -124,6 +124,17 @@
                     </LinearLayout>
                 </FrameLayout>
 
+                <!-- Las explicaciones largas y la clave para agregarla a mano NO caben
+                     dentro del anillo: ese hueco está dimensionado para el reloj. -->
+                <TextView
+                    android:id="@+id/tvExplicacion"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp" android:gravity="center"
+                    android:lineSpacingMultiplier="1.2" android:visibility="gone"
+                    android:textColor="@color/texto_secundario" android:textSize="14sp"
+                    android:textIsSelectable="true"
+                    tools:text="Abra su app de códigos y escriba abajo los 6 dígitos." />
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutCodigoExterno" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:layout_marginTop="20dp"

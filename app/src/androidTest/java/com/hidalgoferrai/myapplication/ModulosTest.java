@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.*;
+import static androidx.test.espresso.matcher.RootMatchers.isDialog;
 import static androidx.test.espresso.matcher.ViewMatchers.*;
 
 @RunWith(AndroidJUnit4.class)
@@ -106,7 +107,6 @@ public class ModulosTest {
         main(()->{
             for(Activity a:ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)) {
                 if(a instanceof TokenActivity || (a.getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0)continue;
-                if(a instanceof InicioActivity && ((InicioActivity)a).getSupportFragmentManager().findFragmentByTag("token-inferior")!=null)continue;
                 View v=a.getWindow().getDecorView();Bitmap b=Bitmap.createBitmap(v.getWidth(),v.getHeight(),Bitmap.Config.ARGB_8888);v.draw(new Canvas(b));
                 try(OutputStream out=new FileOutputStream(new File(contexto.getExternalFilesDir(null),nombre))){b.compress(Bitmap.CompressFormat.PNG,100,out);}
                 catch(IOException e){throw new AssertionError(e);}finally{b.recycle();}
@@ -126,24 +126,19 @@ public class ModulosTest {
         }
         return uri;
     }
-    @Test public void inicioAdministradorMuestraTresAccionesYTokenDesdeAbajo() throws Exception {
+    @Test public void inicioAdministradorMuestraTresAccionesYCodigosDeRecuperacion() throws Exception {
         casoPrueba();
         try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)) {
-            esperar(R.id.btnMiToken,null);captura("inicio-modulos.png");
+            esperar(R.id.btnCodigosRecuperacion,null);captura("inicio-modulos.png");
             s.onActivity(a->{
-                View footer=a.findViewById(R.id.btnMiToken);View root=a.findViewById(R.id.main);
-                assertTrue(footer.getTop()>root.getHeight()*0.65);
+                // Ya no hay tarjeta de Token Digital: la aplicación no guarda ningún código.
+                // Que R.id.btnMiToken ya no exista lo comprueba el propio compilador.
                 assertEquals(3,((LinearLayout)a.findViewById(R.id.grid)).getChildCount());
             });
-            onView(withId(R.id.btnMiToken)).perform(click());
-            s.onActivity(a->{
-                TokenInferior panel=(TokenInferior)a.getSupportFragmentManager().findFragmentByTag("token-inferior");
-                assertNotNull(panel);assertNotNull(panel.getDialog());
-                assertTrue((panel.getDialog().getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0);
-                panel.dismissNow();
-            });
-            // La animación de salida de la ventana del diálogo puede absorber el
-            // siguiente toque aunque el fragmento ya esté eliminado.
+            // Los códigos de recuperación siguen al alcance, que es lo único del token
+            // que sigue siendo cosa de esta aplicación.
+            onView(withId(R.id.btnCodigosRecuperacion)).perform(scrollTo(),click());
+            onView(withText(R.string.eliminar_cancelar)).inRoot(isDialog()).perform(click());
             Thread.sleep(400);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             onView(withText(R.string.inicio_subir_completo)).perform(scrollTo(),click());
@@ -373,7 +368,7 @@ public class ModulosTest {
         }
         try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)){
             s.onActivity(a->a.getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_YES));
-            esperar(R.id.btnMiToken,null);Thread.sleep(200);captura("inicio-dark-corregido.png");
+            esperar(R.id.btnCodigosRecuperacion,null);Thread.sleep(200);captura("inicio-dark-corregido.png");
         }
         try(ActivityScenario<ExpedienteActivity> s=ActivityScenario.launch(ExpedienteActivity.class)){
             s.onActivity(a->a.getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_YES));

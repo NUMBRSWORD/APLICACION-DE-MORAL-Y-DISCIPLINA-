@@ -178,6 +178,13 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCodigosRecuperacion"
+                style="@style/Widget.MESADEPARTES.Button.Text"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginStart="6dp" android:layout_marginTop="10dp"
+                android:layout_marginEnd="6dp" android:text="@string/recuperacion_nuevos"
+                android:textColor="@color/texto_secundario" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnEliminarCuenta"
                 style="@style/Widget.MESADEPARTES.Button.Text"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -187,28 +194,4 @@
         </LinearLayout>
     </LinearLayout>
     </ScrollView>
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/btnMiToken" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:layout_margin="12dp"
-        android:clickable="true" android:focusable="true"
-        android:contentDescription="@string/token_inferior_detalle"
-        app:cardBackgroundColor="@color/verde_profundo" app:cardCornerRadius="22dp"
-        app:strokeWidth="0dp" app:cardElevation="3dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical">
-            <ImageView android:layout_width="32dp" android:layout_height="32dp"
-                android:src="@drawable/ic_shield_check" android:contentDescription="@null"
-                app:tint="@color/oro_sobre_verde"/>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:layout_marginStart="12dp" android:orientation="vertical">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/token_inferior" android:textColor="@color/white"
-                    android:textSize="17sp" android:textStyle="bold"/>
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/token_inferior_detalle" android:textColor="#DDEFE8" android:textSize="12sp"/>
-            </LinearLayout>
-            <ImageView android:layout_width="24dp" android:layout_height="24dp"
-                android:src="@drawable/ic_arrow_forward" android:contentDescription="@null" app:tint="@color/white"/>
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

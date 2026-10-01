@@ -67,15 +67,26 @@ public class DisenoAdaptableTest {
             v.layout(0,0,284,v.getMeasuredHeight());sinRecortes(v);
         });
     }
-    @Test public void tokenPermiteLlegarACerrarEnPantallaBaja() {
+    /**
+     * La pantalla del token es ahora la más cargada: instrucciones, la clave para
+     * agregarla a mano, el campo del código y tres botones. En una pantalla baja todo
+     * eso tiene que poder desplazarse, o quedaría fuera de alcance justo el botón que
+     * hace falta pulsar.
+     */
+    @Test public void tokenPermiteLlegarAlBotonEnPantallaBaja() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
-            View v=medir(contexto(true),R.layout.sheet_token,280);
-            ((TextView)v.findViewById(R.id.tvCodigoInferior)).setText("123 456");
-            ((TextView)v.findViewById(R.id.tvTiempoInferior)).setText(R.string.token_sin_local);
-            v.findViewById(R.id.btnVerificarInferior).setVisibility(View.VISIBLE);medir(v,280);
+            View v=medir(contexto(true),R.layout.activity_token,280);
+            TextView explicacion=v.findViewById(R.id.tvExplicacion);
+            explicacion.setText(v.getContext().getString(R.string.token_sin_autenticador)
+                    + "\n\nGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+            explicacion.setVisibility(View.VISIBLE);
+            v.findViewById(R.id.layoutCodigoExterno).setVisibility(View.VISIBLE);
+            v.findViewById(R.id.btnAutenticador).setVisibility(View.VISIBLE);
+            v.findViewById(R.id.btnCopiarClave).setVisibility(View.VISIBLE);
+            medir(v,280);
             sinRecortes(v);
-            assertTrue("El panel debe poder desplazarse",v instanceof android.widget.ScrollView);
-            assertTrue("Cerrar queda accesible al desplazar",v.canScrollVertically(1));
+            assertTrue("La pantalla debe poder desplazarse",v instanceof android.widget.ScrollView);
+            assertTrue("El botón queda accesible al desplazar",v.canScrollVertically(1));
         });
     }
 }

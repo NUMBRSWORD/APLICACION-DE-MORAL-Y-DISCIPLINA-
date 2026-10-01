@@ -47,7 +47,7 @@ public class TokenActivity extends AppCompatActivity {
 
     private final ExecutorService hilo = Executors.newSingleThreadExecutor();
     private final Handler principal = new Handler(Looper.getMainLooper());
-    private TextView tvCodigo, tvRestante, tvEstado;
+    private TextView tvCodigo, tvRestante, tvEstado, tvExplicacion;
     private CircularProgressIndicator anillo;
     private MaterialButton btnEntrar, btnAutenticador, btnCopiarClave;
     private TextInputLayout layoutCodigo;
@@ -83,6 +83,7 @@ public class TokenActivity extends AppCompatActivity {
         tvCodigo = findViewById(R.id.tvCodigo);
         tvRestante = findViewById(R.id.tvRestante);
         tvEstado = findViewById(R.id.tvEstadoToken);
+        tvExplicacion = findViewById(R.id.tvExplicacion);
         anillo = findViewById(R.id.anillo);
         btnEntrar = findViewById(R.id.btnEntrar);
         btnAutenticador = findViewById(R.id.btnAutenticador);
@@ -462,6 +463,7 @@ public class TokenActivity extends AppCompatActivity {
         tvEstado.setText(R.string.token_estado_preparando);
         tvCodigo.setText(R.string.token_activando_corto);
         tvRestante.setText(mensaje);
+        if (tvExplicacion != null) tvExplicacion.setVisibility(View.GONE);
         anillo.setIndeterminate(true);
         btnEntrar.setEnabled(false);
         etCodigo.setEnabled(false);
@@ -482,6 +484,7 @@ public class TokenActivity extends AppCompatActivity {
         tvEstado.setText(R.string.token_estado_pendiente);
         tvCodigo.setText(R.string.token_bloqueado_icono);
         tvRestante.setText(R.string.token_listo_activar);
+        explicar(null);
         layoutCodigo.setVisibility(View.GONE);
         btnAutenticador.setVisibility(View.GONE);
         btnCopiarClave.setVisibility(View.GONE);
@@ -495,7 +498,8 @@ public class TokenActivity extends AppCompatActivity {
         detenerCarga();
         tvEstado.setText(R.string.token_estado_pedir);
         tvCodigo.setText(R.string.token_bloqueado_icono);
-        tvRestante.setText(R.string.token_pedir_codigo);
+        tvRestante.setText("");
+        explicar(getString(R.string.token_pedir_codigo));
         layoutCodigo.setVisibility(View.VISIBLE);
         btnAutenticador.setText(R.string.token_abrir_autenticador);
         btnAutenticador.setOnClickListener(v -> abrirAutenticador());
@@ -513,7 +517,8 @@ public class TokenActivity extends AppCompatActivity {
         activando = false;
         tvEstado.setText(R.string.token_estado_pedir);
         tvCodigo.setText(R.string.token_bloqueado_icono);
-        tvRestante.setText(R.string.token_pedir_codigo);
+        tvRestante.setText("");
+        explicar(getString(R.string.token_pedir_codigo));
         layoutCodigo.setVisibility(View.VISIBLE);
         btnAutenticador.setVisibility(View.GONE);
         btnCopiarClave.setVisibility(View.GONE);
@@ -524,12 +529,20 @@ public class TokenActivity extends AppCompatActivity {
         findViewById(R.id.btnPerdiTelefono).setVisibility(View.VISIBLE);
     }
 
+    /** Texto largo fuera del anillo: ahí solo cabe el reloj. */
+    private void explicar(String texto) {
+        if (texto == null || texto.isEmpty()) { tvExplicacion.setVisibility(View.GONE); return; }
+        tvExplicacion.setText(texto);
+        tvExplicacion.setVisibility(View.VISIBLE);
+    }
+
     private void mostrarError(Exception error, Runnable accion) {
         detenerCarga();
         reintento = accion;
         tvEstado.setText(R.string.token_estado_error);
         tvCodigo.setText(R.string.token_bloqueado_icono);
         tvRestante.setText(R.string.token_carga_detenida);
+        explicar(null);
         btnEntrar.setEnabled(false);
         Diseno.error(this, R.string.token_error_titulo, Errores.mensaje(error), !Errores.esSesion(error));
         findViewById(R.id.btnAccederDeNuevo).setVisibility(Errores.esSesion(error) ? View.VISIBLE : View.GONE);
