@@ -82,6 +82,7 @@ public class LoginActivity extends AppCompatActivity {
             if (tieneSesion && cbAcepto.isChecked()) restaurarSesion();
         });
         findViewById(R.id.btnInstitucional).setOnClickListener(v -> abrirAplicacion(null));
+        findViewById(R.id.btnDiagnostico).setOnClickListener(v -> mostrarDiagnostico());
 
         procesarRetorno(getIntent());
         // Una sesión guardada no equivale a haber leído o aceptado esta pantalla.
@@ -99,6 +100,7 @@ public class LoginActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        vigilante.removeCallbacks(seAgotoLaEspera);
         hilo.shutdown();
         super.onDestroy();
     }
@@ -110,6 +112,7 @@ public class LoginActivity extends AppCompatActivity {
                 .putString(VERSION_ACEPTADA, ConfigSupabase.VERSION_TERMINOS)
                 .apply();
         try {
+            Diagnostico.paso(this, "acceso: abriendo Google en el navegador");
             startActivity(new Intent(Intent.ACTION_VIEW, SupabaseAuth.urlAccesoGoogle(this, verificador)));
         } catch (ActivityNotFoundException e) {
             Toast.makeText(this, R.string.web_sin_aplicacion, Toast.LENGTH_SHORT).show();
@@ -143,6 +146,7 @@ public class LoginActivity extends AppCompatActivity {
         }
         preferencias.edit().remove(VERIFICADOR).apply();
 
+        Diagnostico.paso(this, "acceso: vuelta de Google recibida, canjeando");
         cargando(true);
         hilo.execute(() -> verificarCuenta(codigo, verificador));
     }
@@ -150,8 +154,10 @@ public class LoginActivity extends AppCompatActivity {
     private void verificarCuenta(String codigo, String verificador) {
         try {
             JSONObject sesion = SupabaseAuth.intercambiarCodigo(codigo, verificador);
+            Diagnostico.paso(this, "acceso: sesión obtenida");
             verificarSesion(sesion, true);
         } catch (IOException | JSONException e) {
+            Diagnostico.fallo(this, "acceso: canje", e);
             avisarError(e);
         }
     }
@@ -164,6 +170,7 @@ public class LoginActivity extends AppCompatActivity {
                 JSONObject sesion = new JSONObject(SesionActual.obtener(this));
                 verificarSesion(sesion, true);
             } catch (IOException | JSONException | RuntimeException e) {
+                Diagnostico.fallo(this, "acceso: sesión guardada", e);
                 avisarError(e);
             }
         });
@@ -245,8 +252,25 @@ public class LoginActivity extends AppCompatActivity {
         finish();
     }
 
+    /**
+     * Tiempo máximo que la pantalla puede quedarse esperando. Las llamadas tienen su
+     * propio límite, pero si el navegador no vuelve del acceso con Google no hay nada
+     * que falle: simplemente no pasa nada, y la persona se queda encerrada mirando la
+     * barra. Esto convierte ese caso en un error con botón de reintentar.
+     */
+    private static final long ESPERA_MAXIMA_MS = 25000;
+    private final android.os.Handler vigilante = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable seAgotoLaEspera = () -> {
+        if (isFinishing() || isDestroyed() || !ocupado) return;
+        Diagnostico.paso(this, "acceso: espera agotada");
+        cargando(false);
+        Diseno.error(this, R.string.error_acceso_titulo, R.string.login_espera_agotada, tieneSesion);
+    };
+
     private void cargando(boolean activo) {
         ocupado = activo;
+        vigilante.removeCallbacks(seAgotoLaEspera);
+        if (activo) vigilante.postDelayed(seAgotoLaEspera, ESPERA_MAXIMA_MS);
         if (activo) findViewById(R.id.estadoPanel).setVisibility(View.GONE);
         progreso.setVisibility(activo ? View.VISIBLE : View.GONE);
         btnGoogle.setEnabled(!activo && cbAcepto.isChecked());
@@ -260,6 +284,45 @@ public class LoginActivity extends AppCompatActivity {
     private void actualizarCuenta() {
         btnGoogle.setText(tieneSesion ? R.string.login_continuar_cuenta : R.string.login_google);
         findViewById(R.id.btnOtraCuenta).setVisibility(tieneSesion ? View.VISIBLE : View.GONE);
+    }
+
+    /**
+     * Enseña el registro para poder copiarlo y mandarlo. Se muestra aquí, y no se
+     * comparte como archivo, para no abrir una vía de salida de datos solo por esto:
+     * lo que hay dentro ya está saneado y cabe en un mensaje.
+     */
+    private void mostrarDiagnostico() {
+        String texto;
+        java.io.File f = Diagnostico.archivo(this);
+        // Lectura a mano: Files.readAllBytes necesita Android 8 y aquí se admite desde el 7.
+        try (java.io.InputStream entrada = f != null && f.exists()
+                ? new java.io.FileInputStream(f) : null) {
+            if (entrada == null) texto = "";
+            else {
+                java.io.ByteArrayOutputStream todo = new java.io.ByteArrayOutputStream();
+                byte[] bloque = new byte[8192];
+                int leidos;
+                while ((leidos = entrada.read(bloque)) != -1) todo.write(bloque, 0, leidos);
+                texto = todo.toString("UTF-8");
+            }
+        } catch (java.io.IOException | RuntimeException e) { texto = ""; }
+        if (texto.trim().isEmpty()) texto = getString(R.string.diagnostico_vacio);
+        // Lo último es lo que importa; un registro largo no cabe en el diálogo.
+        if (texto.length() > 4000) texto = texto.substring(texto.length() - 4000);
+        final String copiable = texto;
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.diagnostico_titulo)
+                .setMessage(getString(R.string.diagnostico_aviso) + "\n\n" + copiable)
+                .setNegativeButton(android.R.string.ok, null)
+                .setPositiveButton(R.string.diagnostico_copiar, (d, b) -> {
+                    android.content.ClipboardManager cp = (android.content.ClipboardManager)
+                            getSystemService(CLIPBOARD_SERVICE);
+                    if (cp == null) return;
+                    cp.setPrimaryClip(android.content.ClipData.newPlainText(
+                            getString(R.string.diagnostico_titulo), copiable));
+                    avisar(getString(R.string.diagnostico_copiado));
+                })
+                .show();
     }
 
     private void avisar(String mensaje) {

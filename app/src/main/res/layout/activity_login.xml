@@ -99,6 +99,12 @@
                 android:layout_marginTop="10dp" android:gravity="center" android:lineSpacingExtra="3dp"
                 android:text="@string/login_aviso_aprobacion" android:textSize="12sp"
                 android:textColor="@color/texto_secundario"/>
+            <!-- Alcanzable aunque el acceso se quede atascado: es justo cuando hace falta. -->
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnDiagnostico"
+                style="@style/Widget.MESADEPARTES.Button.Text"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="4dp" android:text="@string/diagnostico_ver"
+                android:textSize="12sp" android:textColor="@color/texto_secundario"/>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

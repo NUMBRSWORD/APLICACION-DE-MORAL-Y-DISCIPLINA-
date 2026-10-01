@@ -9,6 +9,13 @@
     <string name="login_documentos">Sus datos, bajo su control</string>
     <string name="login_documentos_texto">Conozca las condiciones del servicio antes de ingresar.</string>
     <string name="error_acceso_titulo">No pudimos completar el acceso</string>
+    <string name="login_espera_agotada">La verificación tardó demasiado. Puede que el navegador no haya vuelto a la aplicación. Vuelva a intentarlo.</string>
+    <string name="diagnostico_ver">Ver registro de diagnóstico</string>
+    <string name="diagnostico_titulo">Registro de diagnóstico</string>
+    <string name="diagnostico_copiar">Copiar</string>
+    <string name="diagnostico_copiado">Registro copiado</string>
+    <string name="diagnostico_vacio">Todavía no hay nada anotado.</string>
+    <string name="diagnostico_aviso">Anota por dónde pasa la aplicación y los fallos. No contiene contraseñas, tokens ni códigos.</string>
     <string name="error_sesion">Su sesión ha vencido. Vuelva a ingresar con Google para continuar.</string>
     <string name="error_tiempo">La conexión tardó demasiado. Compruebe su internet y vuelva a intentar.</string>
     <string name="error_conexion">No hay conexión con el servicio. Revise su internet y vuelva a intentar.</string>
