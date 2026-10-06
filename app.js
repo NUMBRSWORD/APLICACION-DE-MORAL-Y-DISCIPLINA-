@@ -1043,9 +1043,9 @@ function renderResumenRapidoNotas() {
 
 function diasHastaFecha(fecha) {
   if (!fecha) return null;
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  const destino = new Date(`${fecha}T12:00:00`); destino.setHours(0, 0, 0, 0);
-  return Math.round((destino - hoy) / 86400000);
+  // Días de calendario de Lima, no del reloj del aparato (que puede estar en otra zona).
+  const dia = (iso) => Date.UTC(...iso.slice(0, 10).split("-").map((n, i) => Number(n) - (i === 1 ? 1 : 0)));
+  return Math.round((dia(fechaLima(fecha)) - dia(hoyLima())) / 86400000);
 }
 
 function obtenerAccionesPrioritariasNotas() {
@@ -1144,12 +1144,13 @@ function renderAgendaNotas() {
 $("buscarAgenda").addEventListener("input", renderAgendaNotas);
 
 function exportarAgendaCalendario() {
-  const fechaIcs = (fecha) => String(fecha || hoyLima()).slice(0, 10).replaceAll("-", "");
+  // created_at es un instante UTC: pasado por fechaLima para que lo creado de noche no caiga al día siguiente.
+  const fechaIcs = (fecha) => fechaLima(fecha || hoyLima()).replaceAll("-", "");
   const escaparIcs = (texto) => String(texto || "").replace(/[\\,;]/g, "\\$&").replace(/\n/g, "\\n");
   const eventos = obtenerAccionesPrioritariasNotas().map((accion, index) => {
     const fecha = accion.tipo === "Plazo vencido" ? fechaLimiteDescargo(accion.nota) : (accion.nota.created_at || new Date().toISOString());
     const stamp = `${Date.now()}-${index}@moral-y-disciplina`;
-    return ["BEGIN:VEVENT", `UID:${stamp}`, `DTSTAMP:${fechaIcs(new Date().toISOString())}T000000Z`, `DTSTART;VALUE=DATE:${fechaIcs(fecha)}`, `SUMMARY:${escaparIcs(`${accion.tipo}: ${accion.nombre}`)}`, `DESCRIPTION:${escaparIcs(accion.detalle)}`, "END:VEVENT"].join("\r\n");
+    return ["BEGIN:VEVENT", `UID:${stamp}`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`, `DTSTART;VALUE=DATE:${fechaIcs(fecha)}`, `SUMMARY:${escaparIcs(`${accion.tipo}: ${accion.nombre}`)}`, `DESCRIPTION:${escaparIcs(accion.detalle)}`, "END:VEVENT"].join("\r\n");
   });
   const contenido = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Moral y Disciplina//Agenda//ES", ...eventos, "END:VCALENDAR"].join("\r\n");
   saveAs(new Blob([contenido], { type: "text/calendar;charset=utf-8" }), `agenda_moral_disciplina_${hoyLima()}.ics`);
@@ -1191,9 +1192,7 @@ function segmentoRuta(texto, fallback = "sin-dato") {
   return (limpio || fallback).slice(0, 90);
 }
 function datosRutaExpedienteCerrado(nota, archivoNombre) {
-  const ahora = new Date();
-  const anio = String(ahora.getFullYear());
-  const mes = String(ahora.getMonth() + 1).padStart(2, "0");
+  const [anio, mes] = hoyLima().split("-");
   const investigado = ubicarInvestigadoEnEfectivos(nota, state.efectivos);
   const cipInvestigado = investigado?.cip || "SIN-CIP";
   const carpeta = [
@@ -4109,11 +4108,11 @@ $("notaForm").addEventListener("submit", async (e) => {
     if (file && inserted?.length) {
       const path = `${inserted[0].id}/${Date.now()}_${file.name}`;
       const { error: upErr } = await supabase.storage.from("notas").upload(path, file);
-      if (!upErr) {
-        await supabase.from("notas_informativas")
-          .update({ archivo_nota_path: path, archivo_nota_nombre: file.name })
-          .in("id", inserted.map((n) => n.id));
-      }
+      const { error: linkErr } = upErr ? { error: upErr } : await supabase.from("notas_informativas")
+        .update({ archivo_nota_path: path, archivo_nota_nombre: file.name })
+        .in("id", inserted.map((n) => n.id));
+      // La nota ya quedó guardada: solo falta su PDF. Antes esto fallaba en silencio.
+      if (linkErr) toast(`La nota se guardó, pero su archivo no se pudo adjuntar (${linkErr.message || "error de red"}). Adjúntelo desde el expediente.`, "error", 12000);
     }
 
     pdfCandidates = [];
@@ -4866,13 +4865,16 @@ $("btnGuardarFaltasLote").addEventListener("click", async (e) => {
     }
     inserted = data || [];
 
+    let sinArchivo = 0;
     for (let i = 0; i < inserted.length; i++) {
       const archivo = archivosSubidos.get(registros[i].file);
       if (!archivo) continue;
-      await supabase.from("notas_informativas")
+      const { error: linkErr } = await supabase.from("notas_informativas")
         .update({ archivo_nota_path: archivo.path, archivo_nota_nombre: archivo.nombre })
         .eq("id", inserted[i].id);
+      if (linkErr) { sinArchivo++; console.error(linkErr); }
     }
+    if (sinArchivo) toast(`${sinArchivo} nota(s) se guardaron sin su PDF por un error al enlazarlo. Adjúntelo desde cada expediente.`, "error", 12000);
   }
 
   // "Continúa faltando": se suma a `seguimiento_faltas` del expediente al que

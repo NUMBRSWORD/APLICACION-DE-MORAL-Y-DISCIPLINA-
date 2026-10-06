@@ -2,11 +2,10 @@
 
 `moral-y-disciplina` — Supabase proyecto `tndjulaitywtoocqeeiy`.
 
-Hoy hay **un solo usuario administrador**. Si ese CIP se pierde, se bloquea o la
-persona se va, **nadie más puede administrar** (crear notas, generar documentos,
-gestionar efectivos, ver Recepción). Esto es un punto único de fallo que una
-auditoría marca. Solución: tener siempre **al menos dos** admins y dejar
-documentado cómo se recupera el acceso.
+Hay **dos administradores** (comprobado el 06/10/2026, ambos con token). Mantener
+siempre al menos dos: si solo queda uno y se bloquea, **nadie más puede
+administrar** (crear notas, generar documentos, gestionar efectivos, ver
+Recepción).
 
 ## Cómo funciona el acceso
 
@@ -41,11 +40,42 @@ entrar y firmar — no hace falta el paso 2.
 > Recomendado: 2 admins fijos (jefe de la unidad + su suplente), y revisar la
 > lista cada vez que hay cambio de destino.
 
+## Un usuario olvidó su clave
+
+Las cuentas son `<CIP>@moralydisciplina.local`: no tienen un correo real, así que
+el *Reset password* de Supabase (que manda un enlace por correo) **no sirve**.
+
+1. Un administrador entra a la web con su token y pulsa **Restablecer clave**
+   (barra superior).
+2. Escribe el CIP del usuario y pulsa **Generar clave temporal**.
+3. Entrega en persona la clave que aparece (tipo `ABCD-EF23`). No se vuelve a
+   mostrar.
+4. El usuario entra con su CIP y esa clave; la app le exige elegir una nueva
+   antes de ver nada. Si tenía token, lo sigue necesitando.
+
+Queda registrado en **Historial** (quién y a qué CIP, nunca la clave). Se cierran
+las sesiones abiertas de ese usuario. Función: `restablecer_clave_usuario`
+(migración `20261006120000_restablecer_clave_por_admin`).
+
 ## Recuperar acceso de un admin bloqueado
 
-- **Olvidó la clave:** otro admin (o el dueño del proyecto Supabase) entra a
-  **Authentication → Users**, abre el usuario y usa *Reset password* / define
-  una nueva.
+El botón no restablece la clave de otro administrador (para que ninguno pueda
+tomar la cuenta del otro). Se hace desde el **SQL Editor** de Supabase con una
+clave temporal; al entrar se le exigirá cambiarla:
+
+```sql
+with u as (
+  update auth.users
+     set encrypted_password = extensions.crypt('CLAVE-TEMPORAL', extensions.gen_salt('bf', 10)),
+         updated_at = now()
+   where email = '<CIP>@moralydisciplina.local'
+  returning id, encrypted_password
+)
+insert into public.cambios_clave_pendientes (user_id, hash_al_marcar)
+select id, encrypted_password from u
+on conflict (user_id) do update set hash_al_marcar = excluded.hash_al_marcar, marcado_at = now();
+```
+
 - **No hay ningún admin disponible:** entrar al **panel de Supabase** con la
   cuenta dueña del proyecto (`hanshidalgo98@gmail.com`) y:
   1. En *Authentication → Users*, resetear la clave del usuario, o crear uno
