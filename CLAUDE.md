@@ -58,8 +58,12 @@ Archivados sin sanción usan su N.º de Resolución.
 
 ## Seguridad y acceso
 
-- Acceso: cuenta aprobada por un administrador + políticas firmadas + Token
-  Digital (TOTP en una app de códigos, también en la web con QR).
+- Acceso: **con Google** (desde 07/10/2026) + solicitud con CIP aprobada por un
+  administrador (pestaña Cuentas, `lib/cuentas.js`) + políticas firmadas + Token
+  Digital (TOTP en una app de códigos, también en la web con QR). Cada forma de
+  entrar es una cuenta distinta con su propio token: las cuentas antiguas de CIP
+  (`{cip}@moralydisciplina.local`) se retiran al aprobar la de Google; los
+  administradores conservan la suya como acceso de emergencia.
 - `es_admin()` / `esta_aprobado()` aún **no** exigen AAL2: se aplicará
   `supabase/seguridad-mfa-aal2.sql` cuando todas las cuentas tengan token.
 - Avisos Android: Edge Function `avisos-android` + cron 08:05 (clave en Vault).

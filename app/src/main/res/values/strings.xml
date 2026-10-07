@@ -20,8 +20,8 @@
     <string name="login_ver_terminos">Leer los términos y condiciones</string>
     <string name="login_ver_datos">Leer la política de datos personales</string>
     <string name="login_google">Continuar con Google</string>
-    <string name="login_aviso_aprobacion">Al crear su cuenta, un administrador debe aprobarla antes de que pueda ver información.</string>
-    <string name="login_institucional">Ingresar con correo o CIP</string>
+    <string name="login_aviso_aprobacion">Entre con Google y llene su solicitud con su CIP. Un administrador debe aprobarla antes de que pueda ver información.</string>
+    <string name="login_institucional">Entrar con CIP y clave (administradores)</string>
     <string name="login_error_sin_aceptacion">Para continuar debe aceptar los términos y condiciones y el tratamiento de datos.</string>
     <string name="login_error_google">No se pudo completar el acceso con Google: %1$s</string>
     <string name="login_error_cuenta">No se pudo verificar su cuenta. Intente de nuevo o comuníquese con el administrador.</string>

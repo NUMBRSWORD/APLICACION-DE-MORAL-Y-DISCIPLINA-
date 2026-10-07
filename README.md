@@ -51,10 +51,8 @@ contraseña se guarda en este repositorio.**
 
 ## Documentos
 
-- [AUDITORIA-2026-09-28.md](AUDITORIA-2026-09-28.md) — auditoría funcional actual, correcciones y límites verificados.
-- [AUDITORIA-2026-09-23.md](AUDITORIA-2026-09-23.md) — auditoría de calidad y de
-  políticas de Google Play, con lo corregido y lo pendiente.
-- [PLAY-STORE-READINESS.md](PLAY-STORE-READINESS.md) — qué falta antes de enviar a
-  Google Play.
-- [PRUEBAS-Y-DESPLIEGUE.md](PRUEBAS-Y-DESPLIEGUE.md) — cómo se prueba y se despliega.
+- [CLAUDE.md](CLAUDE.md) — reglas, comandos y estructura del proyecto (web, Android y Supabase).
+- [docs/recuperacion-de-acceso.md](docs/recuperacion-de-acceso.md) — clave olvidada, administradores y recuperación.
+- [docs/](docs/) — guías vigentes (avisos Android, respaldos, token, datos personales, IA).
+- [docs/historial/](docs/historial/) — auditorías e informes anteriores, como registro; pueden describir estados ya superados.
 - [supabase/](supabase/) — scripts y funciones; su presencia en Git no confirma su despliegue en producción.
