@@ -9,11 +9,26 @@ Recepción).
 
 ## Cómo funciona el acceso
 
-- Los usuarios se crean en **Supabase → Authentication → Users**.
-- Cada usuario tiene una fila en la tabla `public.profiles` con `role` =
-  `'admin'` o `'viewer'`. Solo `role='admin'` habilita todo.
-- Los oficiales inician sesión con su **CIP** (el sistema le agrega
-  `@moralydisciplina.local` por dentro); la clave la fija el administrador.
+Desde el 07/10/2026 **se entra con Google**. Cada forma de entrar (Google o CIP y
+clave) es una cuenta distinta en Supabase, con su propio token: por eso se usa una
+sola por persona.
+
+1. La persona pulsa **Continuar con Google** (en la app Android o en la web) y llena su
+   solicitud: grado, nombres, CIP, DNI y teléfono.
+2. Un administrador la aprueba en la pestaña **Cuentas**. El CIP queda en su cuenta y
+   con él ve sus mismos expedientes.
+3. Si esa persona tenía una cuenta antigua de CIP, se **retira** al aprobar (queda
+   como «rechazada»: no se borra porque figura como autora de notas y documentos).
+   Si entra con ella, la app le dice que ahora entra con Google.
+4. Quien aún entra con CIP ve un aviso para pasar a Google, y no se le pide activar
+   el token en esa cuenta.
+
+Los **administradores conservan su cuenta de CIP** como acceso de emergencia
+(«Entrar con CIP y clave», plegado en la pantalla de ingreso).
+
+- Cada usuario tiene una fila en `public.profiles` con `role` (`admin` o `viewer`),
+  `estado` (`pendiente`, `aprobado`, `rechazado`) y `cip`.
+- Las cuentas de CIP son `<CIP>@moralydisciplina.local`; la clave la fija el administrador.
 
 ## Crear una cuenta para firmar documentos (Comisario u otro mando, sin ser admin)
 
