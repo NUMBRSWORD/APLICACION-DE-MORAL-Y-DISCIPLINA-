@@ -67,3 +67,9 @@ Archivados sin sanción usan su N.º de Resolución.
 - `es_admin()` / `esta_aprobado()` aún **no** exigen AAL2: se aplicará
   `supabase/seguridad-mfa-aal2.sql` cuando todas las cuentas tengan token.
 - Avisos Android: Edge Function `avisos-android` + cron 08:05 (clave en Vault).
+- **Política de seguridad (CSP)** en `index.html`: solo scripts propios, de esm.sh
+  y los en línea autorizados por su huella sha256; conexión solo a Supabase. No se
+  aplica dentro de Android. Si cambias un script en línea o agregas otro sitio,
+  actualiza la política (`tests/csp.test.mjs` lo comprueba).
+- **Registro de errores:** la web manda sus errores a `registrar_error_app()`
+  (tabla `errores_app`, 30 días, solo la lee el admin en Historial; `lib/errores.js`).
