@@ -57,21 +57,23 @@
   style.textContent = `
     :root[data-native-theme="light"] {
       color-scheme:light!important;
-      --bg:#f4f6f2!important; --bg-elev:#f8faf5!important; --bg-card:#fffefb!important;
-      --text:#14231c!important; --text-muted:#526159!important; --border:#849a8d!important;
-      --accent:#096b4e!important; --accent-hover:#07543e!important; --accent-soft:#ddf3ea!important;
+      --bg:#eef1f4!important; --bg-elev:#f7f9fb!important; --bg-card:#ffffff!important;
+      --text:#16222c!important; --text-muted:#5c6b78!important; --border:#8a97a3!important;
+      --accent:#157a41!important; --accent-hover:#106133!important; --accent-soft:#e3f3ea!important;
+      --accent-fill:#18844a!important; --accent-fill-hover:#146d3c!important;
       --danger:#a62b32!important; --danger-soft:#ffe8e8!important; --native-on-accent:#ffffff;
-      --on-accent:#ffffff!important; --shadow-color:39,73,54!important;
+      --on-accent:#ffffff!important; --shadow-color:71,85,105!important;
       --native-gold:#a36a18; --native-gold-soft:#fff1d5;
       --native-warning:#704c10; --native-warning-bg:#fff0cb; --native-info:#174c82; --native-info-bg:#e8f1ff;
     }
     :root[data-native-theme="dark"] {
       color-scheme:dark!important;
-      --bg:#0c1510!important; --bg-elev:#1d3025!important; --bg-card:#17251d!important;
-      --text:#eef7f1!important; --text-muted:#c1d0c5!important; --border:#456452!important;
-      --accent:#79ddb1!important; --accent-hover:#a0e9c8!important; --accent-soft:#153c30!important;
-      --danger:#ffb4ab!important; --danger-soft:#452521!important; --native-on-accent:#073627;
-      --on-accent:#073627!important; --shadow-color:0,7,4!important;
+      --bg:#0f1720!important; --bg-elev:#16212c!important; --bg-card:#1b2836!important;
+      --text:#e7edf3!important; --text-muted:#93a3b3!important; --border:#2a3947!important;
+      --accent:#2fb36a!important; --accent-hover:#45c27d!important; --accent-soft:#183a2a!important;
+      --accent-fill:#2fb36a!important; --accent-fill-hover:#45c27d!important;
+      --danger:#ffb4ab!important; --danger-soft:#452521!important; --native-on-accent:#04210f;
+      --on-accent:#04210f!important; --shadow-color:5,9,14!important;
       --native-gold:#e9c77b; --native-gold-soft:#3a311e;
       --native-warning:#f1d398; --native-warning-bg:#342b1d; --native-info:#b7d7ff; --native-info-bg:#17324a;
     }
@@ -153,7 +155,7 @@
     th, td { border-bottom-color:var(--border)!important; }
     tbody tr:hover { background:var(--bg-elev)!important; }
     .modal, .palette, .toast, .reception-item, .agenda-item, .document-item, .directiva-card { background:var(--bg-card)!important; color:var(--text)!important; border-color:var(--border)!important; }
-    .btn-primary { background:var(--accent)!important; color:var(--on-accent)!important; border-radius:12px!important; font-weight:700; }
+    .btn-primary { background:var(--accent-fill)!important; color:var(--on-accent)!important; border-radius:12px!important; font-weight:700; }
     .btn-secondary, .btn-ghost { color:var(--text)!important; border-radius:12px!important; }
     .eyebrow { color:var(--native-gold)!important; }
     .native-case { margin:12px 0; border-left:3px solid var(--accent)!important; }

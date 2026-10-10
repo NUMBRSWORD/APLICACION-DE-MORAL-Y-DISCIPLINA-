@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="borde_campo_reposo">#7F9A8C</color>
-    <color name="sobre_primario">#073627</color>
+    <color name="borde_campo_reposo">#6B7C8C</color>
+    <color name="sobre_primario">#04210F</color>
     <color name="estado_alerta">#342B1D</color>
     <color name="borde_alerta">#6B5532</color>
     <color name="texto_alerta">#F1D398</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="verde_pnp">#79DDB1</color>
-    <color name="verde_pnp_claro">#A0E9C8</color>
-    <color name="verde_oscuro">#0C5B43</color>
-    <color name="verde_profundo">#062E23</color>
-    <color name="verde_suave">#153C30</color>
+    <color name="verde_pnp">#2FB36A</color>
+    <color name="verde_pnp_claro">#45C27D</color>
+    <color name="verde_oscuro">#136F3B</color>
+    <color name="verde_profundo">#0D4A28</color>
+    <color name="verde_suave">#183A2A</color>
     <color name="dorado">#F0C978</color>
     <color name="dorado_suave">#3E341F</color>
-    <color name="fondo_app">#0C1510</color>
-    <color name="superficie_tarjeta">#17251D</color>
-    <color name="superficie_elevada">#1D3025</color>
-    <color name="borde_suave">#456452</color>
-    <color name="texto_principal">#EEF7F1</color>
-    <color name="texto_secundario">#C1D0C5</color>
+    <color name="fondo_app">#0F1720</color>
+    <color name="superficie_tarjeta">#1B2836</color>
+    <color name="superficie_elevada">#16212C</color>
+    <color name="borde_suave">#2A3947</color>
+    <color name="texto_principal">#E7EDF3</color>
+    <color name="texto_secundario">#93A3B3</color>
     <color name="texto_sobre_verde">#FFFFFFFF</color>
     <color name="estado_info">#17324A</color>
     <color name="estado_info_texto">#B7D7FF</color>
