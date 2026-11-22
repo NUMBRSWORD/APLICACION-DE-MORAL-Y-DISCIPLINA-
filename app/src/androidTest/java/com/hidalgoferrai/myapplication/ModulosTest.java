@@ -151,13 +151,22 @@ public class ModulosTest {
         try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)){
             esperarPanel(s,"Todos los oficiales");
             esperarPanel(s,"Oficial de prueba");
+            captura("panel-admin.png");
+            onView(withText("Oficial de prueba · 111111")).perform(scrollTo());
+            captura("panel-admin-oficiales.png");
             onView(withText("Entregas")).perform(scrollTo(),click());
             esperarPanel(s,"Programar entrega");
+            onView(withText("Programar entrega")).perform(scrollTo());
+            captura("panel-admin-entregas.png");
             onView(withText("Cuenta")).perform(scrollTo(),click());
             esperarPanel(s,"Consultar políticas y firmas");
             onView(withId(R.id.btnCodigosRecuperacion)).perform(scrollTo(),click());
             onView(withText(R.string.eliminar_cancelar)).inRoot(isDialog()).perform(click());
-            onView(withText(R.string.inicio_subir_completo)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist());
+            onView(withText("Panel")).perform(scrollTo(),click());
+            onView(withText(R.string.inicio_subir_completo)).perform(scrollTo())
+                    .check(androidx.test.espresso.assertion.ViewAssertions.matches(isDisplayed()));
+            onView(withText(R.string.inicio_recepcionar)).perform(scrollTo())
+                    .check(androidx.test.espresso.assertion.ViewAssertions.matches(isDisplayed()));
         }
     }
     @Test public void inicioOficialConservaEntregaDeMesAnterior() throws Exception {
@@ -166,6 +175,8 @@ public class ModulosTest {
         try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)){
             esperarPanel(s,"0 casos de falta");
             esperarPanel(s,"Ver entregas abiertas (1)");
+            captura("panel-oficial.png");
+            onView(withText(R.string.inicio_subir_completo)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist());
             onView(withText("Entregas")).perform(scrollTo(),click());
             esperarPanel(s,"Notificar y entregar la orden");
             onView(withText("Programar entrega")).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist());
