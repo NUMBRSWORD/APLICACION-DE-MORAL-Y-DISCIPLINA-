@@ -82,10 +82,17 @@ public class InicioActivity extends AppCompatActivity {
                 .setPositiveButton(R.string.recuperacion_generar, (d, b) ->
                         startActivity(new Intent(this, RecuperacionActivity.class)))
                 .show());
+        if (administrador) {
+            // Abre el escáner, no el módulo de consulta: cada expediente firmado va a su caso.
+            agregar(grid, R.string.inicio_subir_completo, R.string.inicio_subir_completo_detalle,
+                    R.drawable.ic_expediente, "escanear-expediente");
+            agregar(grid, R.string.inicio_recepcionar, R.string.inicio_recepcionar_detalle,
+                    R.drawable.ic_recepcion, "recepcion-fisica");
+        }
         agregar(grid, R.string.acceso_seguimiento, R.string.inicio_usuario_pendientes_detalle,
                 R.drawable.ic_seguimiento, "pendientes");
         agregar(grid, R.string.consultar_expediente_panel, R.string.consultar_expediente_detalle,
-                R.drawable.ic_expediente, "consulta");
+                R.drawable.ic_documento, "consulta");
         findViewById(R.id.tvPanelTexto).setVisibility(View.GONE);
         panel = new PanelOficina(this, savedInstanceState);
 
@@ -207,7 +214,8 @@ public class InicioActivity extends AppCompatActivity {
         tarjeta.setOnClickListener(v -> {
             if ("pendientes".equals(vista)) {
                 startActivity(new Intent(this, SeguimientoActivity.class));
-
+            } else if ("escanear-expediente".equals(vista)) {
+                startActivity(new Intent(this, ExpedienteActivity.class));
             } else {
                 Intent i = new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_VISTA, vista);
                 startActivity(i);
