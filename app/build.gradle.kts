@@ -37,8 +37,8 @@ android {
         applicationId = "com.hidalgoferrai.faltos"
         minSdk = 24
         targetSdk = 37
-        versionCode = 11
-        versionName = "1.7.3"
+        versionCode = 13
+        versionName = "1.8.1"
         // Un solo sitio define el esquema de vuelta del acceso: el filtro del manifiesto y el
         // que comprueba LoginActivity salen de aquí, así nunca se separan.
         esquemaDeAcceso("faltas")
@@ -84,6 +84,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 }
+
+val recursosAgentes = layout.buildDirectory.dir("generated/recursosAgentes")
+val copiarAgentes = tasks.register<Sync>("copiarAgentes") {
+    from(rootProject.file("lib")) { include("agentesOficina.js", "panelAgentes.js", "fechas.js") }
+    into(recursosAgentes.map { it.dir("agentes") })
+}
+android.sourceSets.getByName("main").assets.srcDir(recursosAgentes.get().asFile)
+tasks.named("preBuild").configure { dependsOn(copiarAgentes) }
 
 dependencies {
     implementation(libs.activity.ktx)

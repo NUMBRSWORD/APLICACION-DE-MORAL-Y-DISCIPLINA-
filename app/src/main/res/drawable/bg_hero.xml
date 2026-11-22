@@ -1,7 +1,7 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item><shape android:shape="rectangle">
-        <gradient android:angle="135" android:startColor="#03251C" android:centerColor="#07523C" android:endColor="#0C7454"/>
-        <corners android:bottomLeftRadius="30dp" android:bottomRightRadius="30dp"/>
+        <solid android:color="@color/portada_pizarra"/>
+        <corners android:bottomLeftRadius="20dp" android:bottomRightRadius="20dp"/>
     </shape></item>
     <item android:drawable="@drawable/hero_lines"/>
 </layer-list>

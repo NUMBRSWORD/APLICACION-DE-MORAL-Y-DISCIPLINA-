@@ -31,6 +31,7 @@ public class InicioActivity extends AppCompatActivity {
 
     public static final String EXTRA_SESION = "sesion";
 
+    private PanelOficina panel;
     private String sesion;
     private String tokenActual;
     private final ActivityResultLauncher<String> permisoAvisos = registerForActivityResult(
@@ -81,21 +82,12 @@ public class InicioActivity extends AppCompatActivity {
                 .setPositiveButton(R.string.recuperacion_generar, (d, b) ->
                         startActivity(new Intent(this, RecuperacionActivity.class)))
                 .show());
-        if (administrador) {
-            agregar(grid, R.string.inicio_admin_panel, R.string.inicio_admin_panel_detalle,
-                    R.drawable.ic_calendario, "panel");
-            // Abre el escaner, no el modulo de consulta: el administrador venia aqui
-            // a subir el expediente firmado y se encontraba la lista de todos.
-            agregar(grid, R.string.inicio_subir_completo, R.string.inicio_subir_completo_detalle,
-                    R.drawable.ic_expediente, "escanear-expediente");
-            agregar(grid, R.string.inicio_recepcionar, R.string.inicio_recepcionar_detalle,
-                    R.drawable.ic_recepcion, "recepcion-fisica");
-        } else {
-            agregar(grid, R.string.inicio_usuario_pendientes, R.string.inicio_usuario_pendientes_detalle,
-                    R.drawable.ic_seguimiento, "pendientes");
-            agregar(grid, R.string.inicio_subir_completo, R.string.inicio_usuario_subir_detalle,
-                    R.drawable.ic_expediente, "consulta");
-        }
+        agregar(grid, R.string.acceso_seguimiento, R.string.inicio_usuario_pendientes_detalle,
+                R.drawable.ic_seguimiento, "pendientes");
+        agregar(grid, R.string.consultar_expediente_panel, R.string.consultar_expediente_detalle,
+                R.drawable.ic_expediente, "consulta");
+        findViewById(R.id.tvPanelTexto).setVisibility(View.GONE);
+        panel = new PanelOficina(this, savedInstanceState);
 
         findViewById(R.id.btnSalir).setOnClickListener(v -> cerrarSesion());
         prepararAvisos();
@@ -105,6 +97,12 @@ public class InicioActivity extends AppCompatActivity {
                 new Intent(this, EliminarCuentaActivity.class)
                         .putExtra(EliminarCuentaActivity.EXTRA_TOKEN, tokenActual)));
     }
+
+    @Override protected void onResume() { super.onResume(); if (panel != null) panel.actualizar(); }
+    @Override protected void onSaveInstanceState(Bundle estado) {
+        super.onSaveInstanceState(estado); if (panel != null) panel.conservar(estado);
+    }
+    @Override protected void onDestroy() { if (panel != null) panel.cerrar(); super.onDestroy(); }
 
     private void prepararAvisos() {
         if (!AvisosAndroid.configurado(this)) return;
@@ -209,8 +207,7 @@ public class InicioActivity extends AppCompatActivity {
         tarjeta.setOnClickListener(v -> {
             if ("pendientes".equals(vista)) {
                 startActivity(new Intent(this, SeguimientoActivity.class));
-            } else if ("escanear-expediente".equals(vista)) {
-                startActivity(new Intent(this, ExpedienteActivity.class));
+
             } else {
                 Intent i = new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_VISTA, vista);
                 startActivity(i);

@@ -126,39 +126,49 @@ public class ModulosTest {
         }
         return uri;
     }
-    @Test public void inicioAdministradorMuestraTresAccionesYCodigosDeRecuperacion() throws Exception {
-        casoPrueba();
-        try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)) {
-            esperar(R.id.btnCodigosRecuperacion,null);captura("inicio-modulos.png");
-            s.onActivity(a->{
-                // Ya no hay tarjeta de Token Digital: la aplicación no guarda ningún código.
-                // Que R.id.btnMiToken ya no exista lo comprueba el propio compilador.
-                assertEquals(3,((LinearLayout)a.findViewById(R.id.grid)).getChildCount());
-            });
-            // Los códigos de recuperación siguen al alcance, que es lo único del token
-            // que sigue siendo cosa de esta aplicación.
+    private void panelSimulado(boolean admin) {
+        SupabaseAuth.transporte=(metodo,ruta,token,cuerpo,preferencia)->{
+            if (ruta.contains("/profiles?")) return admin ? "[{\"role\":\"admin\"}]" : "[{\"role\":\"viewer\"}]";
+            if (ruta.endsWith("/cip_actual")) return "\"111111\"";
+            if (ruta.contains("/notas_informativas?")) {
+                if (!admin) assertTrue(ruta.contains("oficial_constato_cip=eq.111111"));
+                return "[{\"id\":\"nota-demo\",\"oficial_constato_cip\":\"111111\",\"oficial_constato\":\"Oficial de prueba\",\"fecha_falta\":\"2020-01-02\",\"orden_sancion_generada_at\":\"2020-01-03\"}]";
+            }
+            if(ruta.contains("/control_entregas?") || ruta.contains("/recepciones_fisicas?")) return "[]";
+            throw new IOException("Consulta inesperada");
+        };
+    }
+    private void esperarPanel(ActivityScenario<InicioActivity> s,String esperado) throws Exception {
+        for(int i=0;i<50;i++){
+            StringBuilder texto=new StringBuilder();s.onActivity(a->recogerTextos(a.findViewById(R.id.panelContenido),texto));
+            if(texto.toString().contains(esperado))return;
+            Thread.sleep(100);
+        }
+        fail("Falta en el panel: "+esperado);
+    }
+    @Test public void inicioAdministradorMuestraSupervisionYCuenta() throws Exception {
+        panelSimulado(true);
+        try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)){
+            esperarPanel(s,"Todos los oficiales");
+            esperarPanel(s,"Oficial de prueba");
+            onView(withText("Entregas")).perform(scrollTo(),click());
+            esperarPanel(s,"Programar entrega");
+            onView(withText("Cuenta")).perform(scrollTo(),click());
+            esperarPanel(s,"Consultar políticas y firmas");
             onView(withId(R.id.btnCodigosRecuperacion)).perform(scrollTo(),click());
             onView(withText(R.string.eliminar_cancelar)).inRoot(isDialog()).perform(click());
-            Thread.sleep(400);
-            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            onView(withText(R.string.inicio_subir_completo)).perform(scrollTo(),click());
-            esperar(R.id.btnEscanear,null);
-            main(()->{
-                boolean scanner=false;
-                for(Activity a:ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED))
-                    if(a instanceof ExpedienteActivity)scanner=true;
-                assertTrue("El administrador abre el escáner de expedientes firmados",scanner);
-            });
+            onView(withText(R.string.inicio_subir_completo)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist());
         }
     }
-    @Test public void inicioUsuarioSoloMuestraPendientesYCargaPropia() throws Exception {
-        Perfil.guardar(contexto,"otro-usuario","S1 PNP","Cuenta Demostración","viewer");
-        try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)) {
-            s.onActivity(a->{
-                assertEquals(2,((LinearLayout)a.findViewById(R.id.grid)).getChildCount());
-                assertEquals(a.getString(R.string.inicio_usuario_titulo),
-                        ((TextView)a.findViewById(R.id.tvPanelTitulo)).getText().toString());
-            });
+    @Test public void inicioOficialConservaEntregaDeMesAnterior() throws Exception {
+        Perfil.guardar(contexto,"demo-modulos","S1 PNP","Cuenta Demostración","viewer");
+        panelSimulado(false);
+        try(ActivityScenario<InicioActivity> s=ActivityScenario.launch(InicioActivity.class)){
+            esperarPanel(s,"0 casos de falta");
+            esperarPanel(s,"Ver entregas abiertas (1)");
+            onView(withText("Entregas")).perform(scrollTo(),click());
+            esperarPanel(s,"Notificar y entregar la orden");
+            onView(withText("Programar entrega")).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist());
         }
     }
     @Test public void seguimientoSoloPendientesYBusqueda() throws Exception {
@@ -479,6 +489,29 @@ public class ModulosTest {
             });
         }
     }
+    @Test public void asistentesEmpaquetadosAbrenFuentesYConservanResumenSinModelo() throws Exception {
+        WebActivity.htmlPrueba = WebActivity.htmlPrueba.replace("</main>", "<button id='btnVolverDashboard'>Volver</button></main>");
+        WebActivity.moduloPrueba += "\nsupabase.rpc=async()=>({data:true});"
+                + "supabase.from=t=>{let rows=t==='notas_informativas'?[{id:'demo',numero_nota_falta:'001',"
+                + "fecha_falta:'2026-11-01',orden_sancion_generada_at:'2026-11-02'}]:[];"
+                + "const q={select(){return q},order(){return q},limit(){return q},not(){return q},is(){return q},"
+                + "in(){return q},gt(){rows=[];return q},then(ok){ok({data:rows})}};return q};"
+                + "supabase.functions={invoke:async()=>({error:'sin modelo'})};";
+        try(ActivityScenario<WebActivity> s=ActivityScenario.launch(modulo("agente-jornada"))){
+            esperar(R.id.webView,null);
+            esperarJs(s,"!!document.querySelector('#view-agentes textarea') && document.querySelector('#view-agentes textarea').value.includes('sin fecha límite registrada: 1')");
+            js(s,"document.querySelector('#view-agentes input[type=text]').value='¿Qué debo entregar?';"
+                    + "Array.from(document.querySelectorAll('#view-agentes button')).find(b=>b.textContent==='Consultar a Ollama').click()");
+            esperarJs(s,"document.querySelector('#view-agentes').textContent.includes('no se completó')");
+            js(s,"Array.from(document.querySelectorAll('#view-agentes details')).find(d=>d.textContent.includes('sin fecha límite')).open=true");
+            esperarJs(s,"!!document.querySelector('#view-agentes details button')");
+            js(s,"document.querySelector('#view-agentes details button').click()");
+            esperarJs(s,"window.openedNote==='demo'");
+            js(s,"document.getElementById('btnVolverDashboard').click()");
+            esperarJs(s,"!document.getElementById('view-agentes').classList.contains('hidden')");
+        }
+    }
+
     private void esperarJs(ActivityScenario<WebActivity> s,String condicion) throws Exception {
         long limite=System.currentTimeMillis()+12000;
         do {if("true".equals(js(s,condicion)))return;Thread.sleep(80);}while(System.currentTimeMillis()<limite);

@@ -29,4 +29,6 @@
     <color name="google_fondo">#FFFFFF</color>
     <color name="google_texto">#1F1F1F</color>
     <color name="google_borde">#747775</color>
+    <color name="portada_pizarra">#16212C</color>
+    <color name="portada_acento">#56CB86</color>
 </resources>

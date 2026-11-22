@@ -156,7 +156,7 @@ public class WebActivity extends AppCompatActivity {
         epocaSesion = SesionActual.epoca();
         seccion = getIntent().getStringExtra(EXTRA_VISTA);
         if ("seguridad".equals(seccion)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        if (seccion != null && !seccion.matches("cumplimiento|seguimiento|efectivos|recepcion|detalle|registro|consulta|recepcion-fisica|panel|herramientas|roles|directivas|agenda|documentos|historial|reincorporacion|continuan|expedientes-lote|seguridad")) {
+        if (seccion != null && !seccion.matches("cumplimiento|seguimiento|efectivos|recepcion|detalle|registro|consulta|recepcion-fisica|panel|herramientas|roles|directivas|agenda|documentos|historial|reincorporacion|continuan|expedientes-lote|seguridad|agente-jornada|agente-parte|agente-expediente")) {
             finish(); return;
         }
         String uriDocumento = getIntent().getStringExtra(EXTRA_DOCUMENTO);
@@ -420,6 +420,9 @@ public class WebActivity extends AppCompatActivity {
         switch (seccion) {
             case "cumplimiento": return R.string.acceso_cumplimiento;
             case "seguimiento": return R.string.historial_efectivo;
+            case "agente-jornada": return R.string.agente_jornada;
+            case "agente-parte": return R.string.agente_parte;
+            case "agente-expediente": return R.string.agente_expediente;
             case "panel": return R.string.panel_mensual;
             case "herramientas": return R.string.herramientas_titulo;
             case "reincorporacion": return R.string.modulo_reincorporacion;
@@ -576,6 +579,10 @@ public class WebActivity extends AppCompatActivity {
             }
             if (getPackageName().endsWith(".qa") && htmlPrueba != null && URL_APP.equals(url))
                 return textoWeb("text/html",htmlPrueba);
+            for (String recurso : new String[]{"agentesOficina.js","panelAgentes.js","fechas.js"}) {
+                if ((URL_APP + "__agentes/" + recurso).equals(url))
+                    return textoWeb("application/javascript",asset("agentes/" + recurso));
+            }
             if ((URL_APP + "app.js").equals(uri.buildUpon().clearQuery().fragment(null).build().toString())) {
                 String fuente;
                 if (getPackageName().endsWith(".qa") && moduloPrueba != null) fuente = moduloPrueba;
