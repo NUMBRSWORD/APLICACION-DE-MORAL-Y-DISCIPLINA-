@@ -218,10 +218,15 @@
 
     <string name="recuperar_entrada">Perdí el teléfono de mi token</string>
     <string name="recuperar_titulo">Recuperar el Token Digital</string>
-    <string name="recuperar_mensaje">Escriba uno de los códigos de recuperación que guardó al activar su token. Se usará una sola vez y podrá activar el token en este teléfono.</string>
+    <string name="recuperar_mensaje">Escriba uno de los códigos de recuperación que guardó al activar su token. Se usará una sola vez y podrá activar el token en este teléfono. Si también perdió los códigos, solicite a la oficina que verifique su identidad y restablezca su acceso.</string>
     <string name="recuperar_campo">Código de recuperación</string>
     <string name="recuperar_boton">Recuperar</string>
     <string name="recuperar_comprobando">Comprobando el código…</string>
     <string name="recuperar_invalido">Ese código no es válido o ya fue usado. Revise la lista que guardó; si no la tiene, pida a un administrador que desactive su token.</string>
     <string name="recuperar_bloqueado">Demasiados intentos fallidos. Espere una hora o pida a un administrador que desactive su token.</string>
+    <string name="consultar_expediente_panel">Consultar expedientes</string>
+    <string name="consultar_expediente_detalle">Ver documentos y estado de recepción</string>
+    <string name="agente_jornada">Preparar mi jornada</string>
+    <string name="agente_parte">Parte mensual</string>
+    <string name="agente_expediente">Revisar expediente</string>
 </resources>

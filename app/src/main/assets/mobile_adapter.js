@@ -139,7 +139,8 @@
   const back=document.getElementById('btnVolverDashboard');
   if(back)back.addEventListener('click',event=>{
     event.stopImmediatePropagation();
-    if(c.view==='detalle')post('back');
+    if(c.view.startsWith('agente-') && document.getElementById('view-agentes'))originalShow('view-agentes');
+    else if(c.view==='detalle')post('back');
     else if(c.view==='consulta'||c.view==='recepcion-fisica')window.__faltosCasework.open(c.view);
     else originalShow('view-'+c.view);
   },true);
@@ -204,7 +205,11 @@
     if(['panel','agenda','seguimiento','registro','expedientes-lote','reincorporacion','continuan'].includes(c.view)){
       if(notesPromise)await notesPromise;else if(typeof loadNotas==='function')await loadNotas();
     }
-    if(c.view==='herramientas')toolsMenu();
+    if(c.view.startsWith('agente-')){
+      const {abrirPanelAgente}=await import('./__agentes/panelAgentes.js');
+      abrirPanelAgente({db:supabase,state,modo:c.view.slice(7),id:c.note,showView:originalShow,
+        abrirNota:openNotaDetail,volver:()=>post('back')});
+    }else if(c.view==='herramientas')toolsMenu();
     else if(c.view==='consulta'||c.view==='recepcion-fisica')await window.__faltosCasework.open(c.view);
     else if(c.view==='detalle'){
       if(!c.note)throw new Error('missing-note');
