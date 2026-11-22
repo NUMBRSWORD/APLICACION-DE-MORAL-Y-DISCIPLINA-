@@ -41,3 +41,48 @@ export async function inferirLocal(entrada: Entrada, visionJson: boolean = false
   const bloque = herramienta ? {type:"tool_use",name:herramienta.name,input:JSON.parse(texto)} : {type:"text",text:texto};
   return Response.json({content:[bloque],stop_reason:limitado ? "max_tokens" : "end_turn"});
 }
+
+// Claude (Anthropic) con la misma entrada y la misma forma de respuesta que
+// inferirLocal: así las funciones no cambian según dónde corran. Se devuelven
+// solo los bloques de texto/herramienta (sin "thinking"), unidos como Ollama.
+const MODELO_CLAUDE = "claude-sonnet-5";
+export async function inferirClaude(entrada: Entrada) {
+  const clave = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!clave) throw new Error("Falta configurar ANTHROPIC_API_KEY en el servidor.");
+  const messages = entrada.messages.map((m) => ({
+    role: m.role,
+    content: Array.isArray(m.content)
+      ? m.content.map((b) => b.type === "image"
+        ? { type: "image", source: { type: "base64", media_type: (b.source as { media_type?: string })?.media_type || "image/jpeg", data: b.source?.data || "" } }
+        : b)
+      : m.content,
+  }));
+  const cuerpo: Record<string, unknown> = { model: MODELO_CLAUDE, max_tokens: entrada.max_tokens, system: entrada.system, messages };
+  if (entrada.tools?.length) {
+    cuerpo.tools = entrada.tools;
+    cuerpo.tool_choice = { type: "tool", name: entrada.tools[0].name };
+  } else if (entrada.output_config?.format?.schema) {
+    cuerpo.output_config = { format: { type: "json_schema", schema: entrada.output_config.format.schema } };
+  }
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": clave, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify(cuerpo),
+  });
+  if (!resp.ok) return resp;
+  const data = await resp.json();
+  const bloques = (data.content || []) as { type: string; text?: string }[];
+  const herramienta = bloques.find((b) => b.type === "tool_use");
+  const texto = bloques.filter((b) => b.type === "text").map((b) => b.text || "").join("");
+  return Response.json({
+    content: [herramienta ?? { type: "text", text: texto }],
+    stop_reason: data.stop_reason,
+  });
+}
+
+// En la PC de la oficina (IA_LOCAL=1) se usa Ollama; en Supabase, Claude. La
+// pasarela de la PC decide cuál responde y, si la PC no contesta, ia-oficina
+// cae a la función de Supabase, que usa Claude.
+export function inferir(entrada: Entrada, visionJson: boolean = false) {
+  return Deno.env.get("IA_LOCAL") === "1" ? inferirLocal(entrada, visionJson) : inferirClaude(entrada);
+}

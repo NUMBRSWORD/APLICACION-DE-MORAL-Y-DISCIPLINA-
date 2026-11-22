@@ -1,5 +1,5 @@
 import { revisarFuentes } from "../_shared/revisionDescargo.ts";
-import { inferirLocal } from "../_shared/ollama.ts";
+import { inferir } from "../_shared/ollama.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -122,7 +122,7 @@ const FORMATO_RESPUESTA = {
 };
 
 async function llamarIA(system: string, userMessage: string, maxTokens: number) {
-  const resp = await inferirLocal({
+  const resp = await inferir({
       max_tokens: maxTokens,
       output_config: { format: FORMATO_RESPUESTA },
       system,

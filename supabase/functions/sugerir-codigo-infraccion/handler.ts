@@ -1,4 +1,4 @@
-import { inferirLocal } from "../_shared/ollama.ts";
+import { inferir } from "../_shared/ollama.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -82,7 +82,7 @@ export const atender = async (req: Request) => {
   try {
     const input = await req.json();
 
-    const resp = await inferirLocal({
+    const resp = await inferir({
         max_tokens: 1000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildUserMessage(input) }],

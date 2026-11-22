@@ -1,4 +1,4 @@
-import { inferirLocal } from "./ollama.ts";
+import { inferir } from "./ollama.ts";
 
 type Fuente = { id: string; texto: string };
 const campos = ["fuente", "cita", "referencia", "cita_contraste", "comprobacion"];
@@ -24,7 +24,7 @@ export async function revisarFuentes(fuentes: Fuente[]) {
       fuentes.reduce((n, f) => n + f.texto.length, 0) > 10800) {
     throw new RangeError("Las fuentes del descargo no tienen el formato esperado.");
   }
-  const respuesta = await inferirLocal({system: instrucciones, max_tokens: 2500, contexto: 8192,
+  const respuesta = await inferir({system: instrucciones, max_tokens: 2500, contexto: 8192,
     output_config: {format: {schema: esquema}},
     messages: [{role: "user", content: JSON.stringify(fuentes.map(({id, texto}) => ({id, texto})))}]});
   const datos = await respuesta.json();

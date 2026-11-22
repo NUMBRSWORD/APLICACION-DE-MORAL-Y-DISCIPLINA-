@@ -1,4 +1,4 @@
-import { inferirLocal } from "../_shared/ollama.ts";
+import { inferir } from "../_shared/ollama.ts";
 
 const clavesPorAgente: Record<string, string[]> = {
   jornada: ["vencidas","hoy","confirmar","sin_fecha","proximas","mes_anterior"],
@@ -21,7 +21,7 @@ export async function responderAgente(input: Entrada, headers: Record<string,str
   const claves = hechos.map(h => h.clave);
   const esquema = {type:"object", properties:{claves:{type:"array", items:{type:"string",enum:claves}}}, required:["claves"], additionalProperties:false};
   const evidencia = hechos.map(({clave,titulo,cantidad}) => ({clave,titulo,cantidad}));
-  const resp = await inferirLocal({
+  const resp = await inferir({
     max_tokens:220, contexto:2048, output_config:{format:{schema:esquema}},
     system:"Elige los indicadores de la lista que contestan directamente a la pregunta de la oficina. Para una pregunta específica devuelve solo la clave más precisa, salvo si se piden expresamente varias categorías. Por ejemplo, una pregunta sobre entregas reportadas pendientes de recepción solo corresponde al indicador de confirmación física. Devuelve las claves por relevancia. Un indicador con valor cero también responde. Si la pregunta no se puede responder con estos indicadores devuelve una lista vacía. Para un panorama general incluye los indicadores relevantes. Usa solo el JSON del esquema.",
     messages:[{role:"user",content:JSON.stringify({pregunta:input.pregunta,indicadores:evidencia})}]

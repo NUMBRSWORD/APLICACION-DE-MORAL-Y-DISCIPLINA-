@@ -1,4 +1,4 @@
-import { inferirLocal } from "../_shared/ollama.ts";
+import { inferir } from "../_shared/ollama.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -135,7 +135,7 @@ export const atenderConOCR = async (req: Request, lector?: (imagen: string) => P
         return Response.json({error:"Se requiere una página JPEG para comparar."}, {status:400,headers:cors});
       }
       const [vision, optico] = await Promise.allSettled([
-        inferirLocal({system:SYSTEM_PROMPT, max_tokens:4096, messages:[{role:"user",
+        inferir({system:SYSTEM_PROMPT, max_tokens:4096, messages:[{role:"user",
           content:[{type:"image",source:{data:imagen}}]}]}).then(async r => (await r.json()).content[0].text),
         lector ? lector(imagen) : Promise.reject(new Error("Segunda lectura no disponible"))
       ]);
@@ -167,7 +167,7 @@ export const atenderConOCR = async (req: Request, lector?: (imagen: string) => P
     // la lectura fallaba con 502 ("formato no reconocible").
     const maxTokens = Math.min(16000, 2000 * paginas.length + 500);
 
-    const resp = await inferirLocal({
+    const resp = await inferir({
         max_tokens: maxTokens,
         system: separar ? SYSTEM_PROMPT_SEPARADO : SYSTEM_PROMPT,
         messages: [{ role: "user", content }],
