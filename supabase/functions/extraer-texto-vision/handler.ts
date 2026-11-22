@@ -136,7 +136,7 @@ export const atenderConOCR = async (req: Request, lector?: (imagen: string) => P
       }
       const [vision, optico] = await Promise.allSettled([
         inferir({system:SYSTEM_PROMPT, max_tokens:4096, messages:[{role:"user",
-          content:[{type:"image",source:{data:imagen}}]}]}).then(async r => (await r.json()).content[0].text),
+          content:[{type:"image",source:{data:imagen}}]}]}).then(async r => textoDeLaRespuesta((await r.json()).content[0].text)),
         lector ? lector(imagen) : Promise.reject(new Error("Segunda lectura no disponible"))
       ]);
       const glm = vision.status === "fulfilled" ? vision.value : "";
