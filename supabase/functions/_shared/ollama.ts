@@ -57,10 +57,12 @@ export async function inferirClaude(entrada: Entrada) {
         : b)
       : m.content,
   }));
-  const cuerpo: Record<string, unknown> = { model: MODELO_CLAUDE, max_tokens: entrada.max_tokens, system: entrada.system, messages };
+  // Los topes de Ollama son solo de respuesta; Claude además razona dentro del
+  // mismo tope, así que se le da un mínimo para que no corte la respuesta.
+  const cuerpo: Record<string, unknown> = { model: MODELO_CLAUDE, max_tokens: Math.max(entrada.max_tokens, 4000), system: entrada.system, messages };
   if (entrada.tools?.length) {
+    // Sin tool_choice forzado: con el razonamiento activo la API lo rechaza.
     cuerpo.tools = entrada.tools;
-    cuerpo.tool_choice = { type: "tool", name: entrada.tools[0].name };
   } else if (entrada.output_config?.format?.schema) {
     cuerpo.output_config = { format: { type: "json_schema", schema: entrada.output_config.format.schema } };
   }
